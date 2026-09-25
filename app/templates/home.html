@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Search Listings{% endblock %}
+{% block content %}
+<h1 class="mb-4">Find your next home</h1>
+
+<form method="get" class="row g-2 mb-4">
+  <div class="col-md-4">
+    <input type="text" name="city" class="form-control" placeholder="City (e.g. Nairobi)" value="{{ city }}">
+  </div>
+  <div class="col-md-4">
+    <input type="number" name="max_price" class="form-control" placeholder="Max rent (KSh)" value="{{ max_price }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-primary w-100">Search</button>
+  </div>
+</form>
+
+<div class="row">
+  {% for listing in listings %}
+  <div class="col-md-4 mb-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">{{ listing.title }}</h5>
+        <h6 class="card-subtitle mb-2 text-muted">{{ listing.city }}</h6>
+        <p class="card-text">
+          KSh {{ "%.0f"|format(listing.rentamount) }} / month<br>
+          {{ listing.bedrooms }} bed &middot; {{ listing.bathrooms }} bath
+        </p>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted">No listings yet. Once the scraper runs, properties will show up here.</p>
+  {% endfor %}
+</div>
+{% endblock %}
