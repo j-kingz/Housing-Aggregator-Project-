@@ -1,7 +1,7 @@
-# Housing Aggregator and Price Analytics Platform
+# Housing-Aggregator-Project-
 
-A web-based platform that brings scattered rental listings together in one place and
-turns them into price insights for urban renters.
+A Web-Based Housing Aggregator and Price Analytics Platform for Urban Renters
+using Data Scraping Techniques.
 
 Final year Information Systems project — Strathmore University, BBIT.
 
