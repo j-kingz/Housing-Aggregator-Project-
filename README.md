@@ -1,22 +1,36 @@
-# Housing-Aggregator-Project-
+# Housing Aggregator Project
 
-A Web-Based Housing Aggregator and Price Analytics Platform for Urban Renters
-using Data Scraping Techniques.
+This is my IT Project II at Strathmore (BBIT). The full title is "A Web-Based Housing Aggregator and Price Analytics Platform for Urban Renters using Data Scraping Techniques".
 
-Final year Information Systems project — Strathmore University, BBIT.
+The idea came from how annoying it is to look for a house in Nairobi. Listings are spread across BuyRentKenya, Property24, Facebook groups and agent websites, and none of them tell you if the rent you're looking at is actually fair for that area. So the plan is to pull public listings into one database, let people search them in one place, and later on show price comparisons per neighbourhood.
 
-## Built with
+Justin Ngunjiri Macharia (158787), supervised by Mr. Wallace Muchiri.
 
-- **Python / Flask** — backend and routing
-- **MySQL + SQLAlchemy** — data storage
-- **Bootstrap 5 + Jinja2** — frontend
-- **BeautifulSoup** — listing data extraction
+## Where it's at
 
-## Running it locally
+Right now the project is at about 40%. What works:
 
-**First time only**
+- Register and log in / log out. You pick whether you're a renter or a landlord when you sign up.
+- Passwords are hashed with Werkzeug (scrypt) before they're saved, so the database never has the real password.
+- Landlords can add, view, edit and delete their own listings (the CRUD part). They can't touch anyone else's.
+- Anyone can search listings by area, max rent and number of bedrooms.
+- Users can edit their profile. Renters can save a preferred area and budget, landlords can add a business name.
+- The MySQL database follows the schema diagram in the drawio file, so you can open it in MySQL Workbench and see all the tables.
+- All forms have CSRF protection (Flask-WTF).
 
-1. Create the virtual environment and install the dependencies:
+Still to do: the real scraper (there's a starting version in `scraper/` that reads a sample HTML page), the price analytics dashboard, notifications for search alerts, the payment flow and the admin side.
+
+## What I used
+
+Python 3 with Flask for the backend, MySQL for the database (through SQLAlchemy and PyMySQL), and plain HTML templates with Bootstrap 5 for the frontend. BeautifulSoup is there for the scraper.
+
+## Running it on your machine
+
+You need Python 3.10 or newer and MySQL Server running locally.
+
+1. Clone the repo and open the folder in a terminal.
+
+2. Make a virtual environment and install everything:
 
    ```powershell
    python -m venv venv
@@ -24,41 +38,72 @@ Final year Information Systems project — Strathmore University, BBIT.
    pip install -r requirements.txt
    ```
 
-2. Copy `.env.example` to `.env` and fill in your MySQL password.
+3. Copy `.env.example` to `.env` and fill in your MySQL username and password, plus a random `SECRET_KEY`. The `.env` file is in `.gitignore` so it won't get pushed.
 
-3. Create the database and its tables:
+4. Create the database and tables:
 
    ```powershell
    python init_db.py
    ```
 
-**Every time after that**
+   This also adds the three roles (Renter, Landlord, Administrator). If you ever want to wipe it and start fresh, run `python init_db.py --reset`. It asks you to type `yes` first.
 
-Double-click `start.bat`, or run:
+5. (Optional) Load a few sample listings so the search page isn't empty:
 
-```powershell
-.\venv\Scripts\Activate.ps1
-python run.py
+   ```powershell
+   python -m scraper.scraper
+   ```
+
+6. Start the site:
+
+   ```powershell
+   python run.py
+   ```
+
+   Then go to http://127.0.0.1:5000. On Windows you can also just double-click `start.bat`.
+
+## Seeing the database
+
+Open MySQL Workbench, connect to your local server and look for `housing_aggregator_db`. The tables are:
+
+| Table | What's in it |
+|-------|--------------|
+| `role` | Renter, Landlord, Administrator |
+| `user` | Everyone who has registered. The `password` column only holds the hash |
+| `renter_details` | Preferred area and budget for renters |
+| `landlord_details` | Business name and verification status for landlords |
+| `properties` | The listings, both landlord-added and scraped |
+| `search_alert` | Saved searches (not used yet) |
+| `notification` | Alerts sent to renters (not used yet) |
+| `payment` | Payments (not used yet) |
+
+A quick way to check the hashing is working:
+
+```sql
+SELECT email, password FROM housing_aggregator_db.user;
 ```
 
-Then open http://127.0.0.1:5000 in your browser. Press `Ctrl+C` in the terminal to stop.
+You should see something starting with `scrypt:` instead of the actual password.
 
-## Project layout
+## Folder layout
 
-| Path | Purpose |
-|------|---------|
-| `run.py` | Starts the development server |
-| `init_db.py` | One-time database and table setup |
-| `config.py` | Reads settings from `.env` |
-| `app/models.py` | Database tables, mirroring the ERD |
-| `app/auth/` | Registration, login and logout |
-| `app/main/` | Listing search and the analytics dashboard |
-| `app/templates/` | HTML pages |
-| `scraper/` | Listing extraction engine (work in progress) |
+```
+app/
+  __init__.py        sets up Flask, the database and login
+  models.py          all the tables
+  auth/              register, login, logout
+  main/              search page and profile
+  listings/          add / edit / delete listings
+  templates/         the HTML pages
+  static/css/        a bit of extra styling
+scraper/             scraper (work in progress)
+config.py            reads settings from .env
+init_db.py           creates the database
+run.py               starts the server
+```
 
-## A note on scraping
+The proposal document and the diagrams (use case, context, DFDs, ERD, schema, sequence and wireframe) are in the root of the repo as well.
 
-The scraper only targets publicly available listings and checks each site's
-`robots.txt` before requesting anything. Requests are deliberately spaced out so
-target servers are not overloaded. Collected data is used solely for academic
-analysis within this project.
+## About the scraping
+
+The scraper will only go after publicly available listings, and it checks a site's `robots.txt` before requesting anything (`scraper/robots_checker.py`). When it's pointed at real sites there'll be a delay between requests so it doesn't hammer anyone's server. The data is only for this academic project and won't be used commercially.
