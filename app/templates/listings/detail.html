@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ listing.title }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('main.home') }}" class="small">&larr; Back to search</a>
+
+<div class="card listing-card mt-3">
+  <div class="card-body p-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h2 class="mb-1">{{ listing.title }}</h2>
+        <p class="text-muted mb-0">{{ listing.address ~ ', ' if listing.address }}{{ listing.city }}</p>
+      </div>
+      <div class="price">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small class="text-muted fw-normal fs-6">/ month</small></div>
+    </div>
+
+    <hr>
+
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Category</dt>
+      <dd class="col-sm-9">{{ listing.category or '-' }}</dd>
+
+      <dt class="col-sm-3">Bedrooms</dt>
+      <dd class="col-sm-9">{{ listing.bedrooms if listing.bedrooms is not none else '-' }}</dd>
+
+      <dt class="col-sm-3">Bathrooms</dt>
+      <dd class="col-sm-9">{{ listing.bathrooms if listing.bathrooms is not none else '-' }}</dd>
+
+      <dt class="col-sm-3">Building no.</dt>
+      <dd class="col-sm-9">{{ listing.buildingnumber or '-' }}</dd>
+
+      <dt class="col-sm-3">Listed on</dt>
+      <dd class="col-sm-9">{{ listing.listingdate.strftime('%d %b %Y') if listing.listingdate else '-' }}</dd>
+
+      <dt class="col-sm-3">Listed by</dt>
+      <dd class="col-sm-9">
+        {% if listing.landlord %}
+          {{ listing.landlord.businessname or listing.landlord.user.full_name }}
+        {% elif listing.source_name %}
+          {{ listing.source_name }}
+        {% else %}
+          -
+        {% endif %}
+      </dd>
+    </dl>
+
+    {% if listing.source_url and listing.source_url.startswith(('http://', 'https://')) %}
+      <a href="{{ listing.source_url }}" class="btn btn-outline-secondary btn-sm mt-3" target="_blank" rel="noopener noreferrer">
+        See the original listing
+      </a>
+    {% endif %}
+
+    {% if current_user.is_authenticated and listing.landlord_id == current_user.user_id %}
+      <div class="d-flex gap-2 mt-4">
+        <a href="{{ url_for('listings.edit', listing_id=listing.listing_id) }}" class="btn btn-primary btn-sm">Edit</a>
+        <form method="post" action="{{ url_for('listings.delete', listing_id=listing.listing_id) }}"
+              onsubmit="return confirm('Delete this listing? This can\'t be undone.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger btn-sm">Delete</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
