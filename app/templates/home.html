@@ -1,36 +1,53 @@
 {% extends "base.html" %}
-{% block title %}Search Listings{% endblock %}
+{% block title %}Search{% endblock %}
 {% block content %}
-<h1 class="mb-4">Find your next home</h1>
+<h2 class="mb-3">Find a place to rent</h2>
 
-<form method="get" class="row g-2 mb-4">
-  <div class="col-md-4">
-    <input type="text" name="city" class="form-control" placeholder="City (e.g. Nairobi)" value="{{ city }}">
+<form method="get" class="search-box row g-2 mb-4">
+  <div class="col-md-5">
+    <input type="text" name="location" class="form-control" placeholder="Area or city e.g. Kilimani"
+           value="{{ location }}">
   </div>
-  <div class="col-md-4">
-    <input type="number" name="max_price" class="form-control" placeholder="Max rent (KSh)" value="{{ max_price }}">
+  <div class="col-md-3">
+    <input type="number" name="max_price" class="form-control" placeholder="Max rent (KSh)" min="0"
+           value="{{ max_price }}">
   </div>
   <div class="col-md-2">
-    <button type="submit" class="btn btn-primary w-100">Search</button>
+    <select name="bedrooms" class="form-select">
+      <option value="">Bedrooms</option>
+      {% for n in range(1, 5) %}
+        <option value="{{ n }}" {% if bedrooms == n %}selected{% endif %}>{{ n }}+</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2 d-grid">
+    <button type="submit" class="btn btn-primary">Search</button>
   </div>
 </form>
 
-<div class="row">
+<p class="text-muted small">{{ listings|length }} listing{{ '' if listings|length == 1 else 's' }} found</p>
+
+<div class="row g-3">
   {% for listing in listings %}
-  <div class="col-md-4 mb-3">
-    <div class="card h-100">
-      <div class="card-body">
-        <h5 class="card-title">{{ listing.title }}</h5>
-        <h6 class="card-subtitle mb-2 text-muted">{{ listing.city }}</h6>
-        <p class="card-text">
-          KSh {{ "%.0f"|format(listing.rentamount) }} / month<br>
-          {{ listing.bedrooms }} bed &middot; {{ listing.bathrooms }} bath
+  <div class="col-sm-6 col-lg-4">
+    <div class="card listing-card h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small class="text-muted fw-normal fs-6">/ month</small></div>
+        <h5 class="card-title mb-1">{{ listing.title }}</h5>
+        <p class="text-muted mb-2">{{ listing.address ~ ', ' if listing.address }}{{ listing.city }}</p>
+        <p class="small mb-3">
+          {{ listing.bedrooms if listing.bedrooms is not none else '-' }} bed &middot;
+          {{ listing.bathrooms if listing.bathrooms is not none else '-' }} bath
+          {% if listing.category %}&middot; {{ listing.category }}{% endif %}
         </p>
+        <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="btn btn-outline-primary btn-sm mt-auto">View</a>
       </div>
     </div>
   </div>
   {% else %}
-  <p class="text-muted">No listings yet. Once the scraper runs, properties will show up here.</p>
+  <div class="col-12">
+    <p class="text-muted">Nothing matches that search yet. Try a different area or a higher budget.</p>
+  </div>
   {% endfor %}
 </div>
 {% endblock %}
