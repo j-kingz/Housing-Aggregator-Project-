@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 640px;">
+  <h2 class="mb-1">My profile</h2>
+  <p class="text-muted mb-4">
+    {{ user.email }} &middot; {{ user.role.name }} account
+  </p>
+
+  <form method="post" class="bg-white p-4 rounded shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="firstname">First name</label>
+        <input type="text" id="firstname" name="firstname" class="form-control" maxlength="50"
+               value="{{ user.firstname }}" required>
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="lastname">Last name</label>
+        <input type="text" id="lastname" name="lastname" class="form-control" maxlength="50"
+               value="{{ user.lastname }}" required>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="phonenumber">Phone number</label>
+      <input type="tel" id="phonenumber" name="phonenumber" class="form-control" maxlength="20"
+             value="{{ user.phonenumber or '' }}">
+    </div>
+
+    {% if user.renter %}
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="preferredlocation">Preferred area</label>
+        <input type="text" id="preferredlocation" name="preferredlocation" class="form-control" maxlength="100"
+               placeholder="e.g. Westlands" value="{{ user.renter.preferredlocation or '' }}">
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="budgetrange">Budget range (KSh)</label>
+        <input type="text" id="budgetrange" name="budgetrange" class="form-control" maxlength="50"
+               placeholder="e.g. 20,000 - 30,000" value="{{ user.renter.budgetrange or '' }}">
+      </div>
+    </div>
+    {% endif %}
+
+    {% if user.landlord %}
+    <div class="mb-3">
+      <label class="form-label" for="businessname">Business name</label>
+      <input type="text" id="businessname" name="businessname" class="form-control" maxlength="100"
+             value="{{ user.landlord.businessname or '' }}">
+      <div class="form-text">Verification status: {{ user.landlord.verificationstatus }}</div>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary mt-2">Save</button>
+  </form>
+</div>
+{% endblock %}
