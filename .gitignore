@@ -4,3 +4,7 @@ __pycache__/
 .env
 instance/
 *.log
+
+# proposal and diagrams stay local only
+*.docx
+*.drawio
