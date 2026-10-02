@@ -1,35 +1,42 @@
-"""
-Turns raw listing-page HTML into a clean list of dictionaries.
-Kept separate from scraper.py so the parsing logic can be unit-tested
-on any HTML string, without needing a live network request or a database.
-"""
+# Turns a listings page into a list of dicts that match the Property columns.
+# Kept away from the database code so it can be tested on any HTML string.
+
 import re
+
 from bs4 import BeautifulSoup
 
 
-def _extract_number(text):
-    """Pulls the digits out of strings like 'KSh 28,000' or '2 Bedrooms'."""
+def get_number(text):
+    # "KSh 28,000" -> 28000, "2 Bedrooms" -> 2
     digits = re.sub(r"[^\d]", "", text)
-    return int(digits) if digits else 0
+    return int(digits) if digits else None
 
 
-def parse_listings(html_text):
-    soup = BeautifulSoup(html_text, "html.parser")
-    listings = []
+def parse_listings(html):
+    soup = BeautifulSoup(html, "html.parser")
+    results = []
 
     for card in soup.select(".listing-card"):
-        title = card.select_one(".listing-title").get_text(strip=True)
-        price = _extract_number(card.select_one(".price").get_text())
-        bedrooms = _extract_number(card.select_one(".bedrooms").get_text())
-        bathrooms = _extract_number(card.select_one(".bathrooms").get_text())
-        location_text = card.select_one(".location").get_text(strip=True)
+        try:
+            title = card.select_one(".listing-title").get_text(strip=True)
+            price = get_number(card.select_one(".price").get_text())
+            bedrooms = get_number(card.select_one(".bedrooms").get_text())
+            bathrooms = get_number(card.select_one(".bathrooms").get_text())
+            location = card.select_one(".location").get_text(strip=True)
+        except AttributeError:
+            # a field is missing on this card - skip it instead of crashing the whole run
+            print("Skipped a listing with missing fields")
+            continue
 
-        # "Kilimani, Nairobi" -> address="Kilimani", city="Nairobi"
-        parts = [p.strip() for p in location_text.split(",")]
-        address = parts[0] if parts else location_text
-        city = parts[1] if len(parts) > 1 else parts[0]
+        if not price:
+            continue
 
-        listings.append({
+        # "Kilimani, Nairobi" -> address "Kilimani", city "Nairobi"
+        parts = [p.strip() for p in location.split(",")]
+        address = parts[0]
+        city = parts[-1]
+
+        results.append({
             "title": title,
             "rentamount": price,
             "bedrooms": bedrooms,
@@ -39,4 +46,4 @@ def parse_listings(html_text):
             "address": address,
         })
 
-    return listings
+    return results
