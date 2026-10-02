@@ -102,7 +102,7 @@ init_db.py           creates the database
 run.py               starts the server
 ```
 
-The proposal document and the diagrams (use case, context, DFDs, ERD, schema, sequence and wireframe) are in the root of the repo as well.
+The proposal document and the diagrams are kept outside the repo.
 
 ## About the scraping
 
