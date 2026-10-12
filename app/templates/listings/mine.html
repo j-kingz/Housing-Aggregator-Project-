@@ -1,38 +1,47 @@
 {% extends "base.html" %}
+{% from "_macros.html" import category_icon, location %}
 {% block title %}My listings{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-0">My listings</h2>
-  <a href="{{ url_for('listings.create') }}" class="btn btn-primary">+ Add listing</a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h2 class="mb-0">My listings</h2>
+    <span class="text-muted small">{{ listings|length }} propert{{ 'y' if listings|length == 1 else 'ies' }}</span>
+  </div>
+  <a href="{{ url_for('listings.create') }}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Add listing</a>
 </div>
 
 {% if listings %}
-<div class="table-responsive bg-white rounded shadow-sm">
+<div class="panel table-responsive">
   <table class="table table-hover align-middle mb-0">
-    <thead class="table-light">
+    <thead>
       <tr>
-        <th>Title</th>
+        <th class="ps-4">Property</th>
         <th>Location</th>
         <th class="text-end">Rent (KSh)</th>
-        <th>Beds</th>
+        <th class="text-center">Beds</th>
         <th>Listed</th>
-        <th></th>
+        <th class="pe-4"></th>
       </tr>
     </thead>
     <tbody>
       {% for l in listings %}
       <tr>
-        <td><a href="{{ url_for('listings.detail', listing_id=l.listing_id) }}">{{ l.title }}</a></td>
-        <td>{{ l.address ~ ', ' if l.address }}{{ l.city }}</td>
-        <td class="text-end">{{ "{:,.0f}".format(l.rentamount) }}</td>
-        <td>{{ l.bedrooms if l.bedrooms is not none else '-' }}</td>
-        <td>{{ l.listingdate.strftime('%d/%m/%Y') if l.listingdate }}</td>
-        <td class="text-end text-nowrap">
-          <a href="{{ url_for('listings.edit', listing_id=l.listing_id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+        <td class="ps-4">
+          <div class="d-flex align-items-center gap-2">
+            <span class="icon-box icon-box-sm">{{ category_icon(l.category) }}</span>
+            <a href="{{ url_for('listings.detail', listing_id=l.listing_id) }}" class="fw-medium text-decoration-none">{{ l.title }}</a>
+          </div>
+        </td>
+        <td class="text-muted">{{ location(l) }}</td>
+        <td class="text-end fw-semibold">{{ "{:,.0f}".format(l.rentamount) }}</td>
+        <td class="text-center">{{ l.bedrooms if l.bedrooms is not none else '-' }}</td>
+        <td class="text-muted small">{{ l.listingdate.strftime('%d %b %Y') if l.listingdate }}</td>
+        <td class="text-end text-nowrap pe-4">
+          <a href="{{ url_for('listings.edit', listing_id=l.listing_id) }}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
           <form method="post" action="{{ url_for('listings.delete', listing_id=l.listing_id) }}" class="d-inline"
                 onsubmit="return confirm('Delete this listing?');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-sm btn-outline-danger">Delete</button>
+            <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
           </form>
         </td>
       </tr>
@@ -41,6 +50,10 @@
   </table>
 </div>
 {% else %}
-<p class="text-muted">You haven't added any listings yet.</p>
+<div class="panel empty-state">
+  <i class="bi bi-buildings d-block mb-2"></i>
+  <p class="mb-3">You haven't added any listings yet.</p>
+  <a href="{{ url_for('listings.create') }}" class="btn btn-primary">Add your first listing</a>
+</div>
 {% endif %}
 {% endblock %}
