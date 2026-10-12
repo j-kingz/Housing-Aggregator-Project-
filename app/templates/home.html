@@ -1,52 +1,80 @@
 {% extends "base.html" %}
+{% from "_macros.html" import category_icon, location as where %}
 {% block title %}Search{% endblock %}
-{% block content %}
-<h2 class="mb-3">Find a place to rent</h2>
 
+{% block hero %}
+<section class="hero">
+  <div class="container">
+    <h1 class="mb-2">Find a place to rent without the endless scrolling</h1>
+    <p class="mb-0">Listings from different sites in one place. Search by area, budget and number of bedrooms.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
 <form method="get" class="search-box row g-2 mb-4">
   <div class="col-md-5">
-    <input type="text" name="location" class="form-control" placeholder="Area or city e.g. Kilimani"
-           value="{{ location }}">
+    <label class="form-label small text-muted mb-1" for="location">Where</label>
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+      <input type="text" id="location" name="location" class="form-control" placeholder="Area or city e.g. Kilimani"
+             value="{{ location }}">
+    </div>
   </div>
   <div class="col-md-3">
-    <input type="number" name="max_price" class="form-control" placeholder="Max rent (KSh)" min="0"
-           value="{{ max_price }}">
+    <label class="form-label small text-muted mb-1" for="max_price">Max rent</label>
+    <div class="input-group">
+      <span class="input-group-text">KSh</span>
+      <input type="number" id="max_price" name="max_price" class="form-control" placeholder="Any" min="0"
+             value="{{ max_price }}">
+    </div>
   </div>
   <div class="col-md-2">
-    <select name="bedrooms" class="form-select">
-      <option value="">Bedrooms</option>
+    <label class="form-label small text-muted mb-1" for="bedrooms">Bedrooms</label>
+    <select id="bedrooms" name="bedrooms" class="form-select">
+      <option value="">Any</option>
       {% for n in range(1, 5) %}
         <option value="{{ n }}" {% if bedrooms == n %}selected{% endif %}>{{ n }}+</option>
       {% endfor %}
     </select>
   </div>
-  <div class="col-md-2 d-grid">
-    <button type="submit" class="btn btn-primary">Search</button>
+  <div class="col-md-2 d-grid align-self-end">
+    <button type="submit" class="btn btn-accent py-2"><i class="bi bi-search me-1"></i> Search</button>
   </div>
 </form>
 
-<p class="text-muted small">{{ listings|length }} listing{{ '' if listings|length == 1 else 's' }} found</p>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">Available listings</h5>
+  <span class="text-muted small">{{ listings|length }} result{{ '' if listings|length == 1 else 's' }}</span>
+</div>
 
-<div class="row g-3">
+<div class="row g-4">
   {% for listing in listings %}
   <div class="col-sm-6 col-lg-4">
-    <div class="card listing-card h-100">
-      <div class="card-body d-flex flex-column">
-        <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small class="text-muted fw-normal fs-6">/ month</small></div>
-        <h5 class="card-title mb-1">{{ listing.title }}</h5>
-        <p class="text-muted mb-2">{{ listing.address ~ ', ' if listing.address }}{{ listing.city }}</p>
-        <p class="small mb-3">
-          {{ listing.bedrooms if listing.bedrooms is not none else '-' }} bed &middot;
-          {{ listing.bathrooms if listing.bathrooms is not none else '-' }} bath
-          {% if listing.category %}&middot; {{ listing.category }}{% endif %}
-        </p>
-        <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="btn btn-outline-primary btn-sm mt-auto">View</a>
+    <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="text-decoration-none text-reset">
+      <div class="card listing-card h-100">
+        <div class="listing-thumb">
+          {% if listing.category %}<span class="tag">{{ listing.category }}</span>{% endif %}
+          {{ category_icon(listing.category) }}
+        </div>
+        <div class="card-body">
+          <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small>/ month</small></div>
+          <h6 class="mb-1 text-truncate">{{ listing.title }}</h6>
+          <p class="text-muted small mb-3"><i class="bi bi-geo-alt me-1"></i>{{ where(listing) }}</p>
+          <div class="facts">
+            <span><i class="bi bi-door-closed"></i>{{ listing.bedrooms if listing.bedrooms is not none else '-' }} bed</span>
+            <span><i class="bi bi-droplet"></i>{{ listing.bathrooms if listing.bathrooms is not none else '-' }} bath</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </a>
   </div>
   {% else %}
   <div class="col-12">
-    <p class="text-muted">Nothing matches that search yet. Try a different area or a higher budget.</p>
+    <div class="panel empty-state">
+      <i class="bi bi-search d-block mb-2"></i>
+      Nothing matches that search yet. Try a different area or a higher budget.
+    </div>
   </div>
   {% endfor %}
 </div>
