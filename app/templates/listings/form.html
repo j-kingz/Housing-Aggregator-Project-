@@ -1,26 +1,35 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Edit listing' if editing else 'Add listing' }}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 640px;">
-  <h2 class="mb-4">{{ 'Edit listing' if editing else 'Add a listing' }}</h2>
+<div class="mx-auto" style="max-width: 680px;">
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <span class="icon-box"><i class="bi {{ 'bi-pencil-square' if editing else 'bi-plus-square' }}"></i></span>
+    <div>
+      <h2 class="mb-0">{{ 'Edit listing' if editing else 'Add a listing' }}</h2>
+      <span class="text-muted small">Fields marked * are required</span>
+    </div>
+  </div>
 
-  <form method="post" class="bg-white p-4 rounded shadow-sm">
+  <form method="post" class="panel p-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="mb-3">
-      <label class="form-label" for="title">Title</label>
+      <label class="form-label" for="title">Title *</label>
       <input type="text" id="title" name="title" class="form-control" maxlength="150"
              placeholder="e.g. Spacious 2 bedroom near Yaya Centre" value="{{ listing.title or '' }}" required>
     </div>
 
     <div class="row">
       <div class="col-sm-6 mb-3">
-        <label class="form-label" for="rentamount">Rent per month (KSh)</label>
-        <input type="number" id="rentamount" name="rentamount" class="form-control" min="1" step="any"
-               value="{{ listing.rentamount or '' }}" required>
+        <label class="form-label" for="rentamount">Rent per month *</label>
+        <div class="input-group">
+          <span class="input-group-text">KSh</span>
+          <input type="number" id="rentamount" name="rentamount" class="form-control" min="1" step="any"
+                 value="{{ listing.rentamount or '' }}" required>
+        </div>
       </div>
       <div class="col-sm-6 mb-3">
-        <label class="form-label" for="category">Category</label>
+        <label class="form-label" for="category">Category *</label>
         <select id="category" name="category" class="form-select" required>
           <option value="">Choose...</option>
           {% for c in categories %}
@@ -50,7 +59,7 @@
                placeholder="e.g. Kilimani" value="{{ listing.address or '' }}">
       </div>
       <div class="col-sm-6 mb-3">
-        <label class="form-label" for="city">City</label>
+        <label class="form-label" for="city">City *</label>
         <input type="text" id="city" name="city" class="form-control" maxlength="50"
                placeholder="e.g. Nairobi" value="{{ listing.city or '' }}" required>
       </div>
@@ -62,10 +71,10 @@
              value="{{ listing.buildingnumber or '' }}">
     </div>
 
-    <div class="d-flex gap-2">
-      <button type="submit" class="btn btn-primary">{{ 'Save changes' if editing else 'Add listing' }}</button>
+    <div class="d-flex gap-2 border-top pt-3">
+      <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check2 me-1"></i> {{ 'Save changes' if editing else 'Add listing' }}</button>
       <a href="{{ url_for('listings.detail', listing_id=listing_id) if editing else url_for('listings.my_listings') }}"
-         class="btn btn-link">Cancel</a>
+         class="btn btn-light">Cancel</a>
     </div>
   </form>
 </div>
