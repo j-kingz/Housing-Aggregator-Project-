@@ -1,0 +1,15 @@
+{% macro category_icon(category) -%}
+  {%- set icons = {
+    'Apartment': 'bi-building',
+    'Bedsitter': 'bi-door-open',
+    'Studio': 'bi-house',
+    'Maisonette': 'bi-houses',
+    'Bungalow': 'bi-house-door',
+    'Townhouse': 'bi-houses-fill',
+  } -%}
+  <i class="bi {{ icons.get(category, 'bi-house') }}"></i>
+{%- endmacro %}
+
+{% macro location(listing) -%}
+  {{ listing.address ~ ', ' if listing.address }}{{ listing.city }}
+{%- endmacro %}
