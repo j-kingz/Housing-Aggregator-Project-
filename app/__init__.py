@@ -19,14 +19,18 @@ def create_app(config_class=Config):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(User, int(user_id))
+        user = db.session.get(User, int(user_id))
+        # a deactivated user gets logged out on their next request
+        return user if user and user.status == "active" else None
 
     from app.auth.routes import auth_bp
     from app.main.routes import main_bp
     from app.listings.routes import listings_bp
+    from app.admin.routes import admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(listings_bp)
+    app.register_blueprint(admin_bp)
 
     return app

@@ -52,6 +52,10 @@ class User(UserMixin, db.Model):
         return self.role is not None and self.role.name == "Landlord"
 
     @property
+    def is_admin(self):
+        return self.role is not None and self.role.name == "Administrator"
+
+    @property
     def full_name(self):
         return f"{self.firstname} {self.lastname}"
 

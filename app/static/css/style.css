@@ -322,6 +322,17 @@ h1, h2, h3, h4, h5 {
   border: none;
 }
 
+/* admin */
+.admin-tabs .nav-link {
+  color: var(--ink);
+  font-weight: 500;
+  border-radius: 10px;
+}
+
+.admin-tabs .nav-link.active {
+  background: var(--brand);
+}
+
 .site-footer {
   background: #fff;
   border-top: 1px solid rgba(0, 0, 0, 0.06);

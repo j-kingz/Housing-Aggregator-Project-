@@ -1,0 +1,86 @@
+{% extends "admin/_layout.html" %}
+{% from "_macros.html" import location %}
+{% block title %}Admin{% endblock %}
+{% block admin_content %}
+<div class="row g-3 mb-4">
+  {% for label, value, icon in [
+      ('Users', stats.users, 'bi-people'),
+      ('Renters', stats.renters, 'bi-search'),
+      ('Landlords', stats.landlords, 'bi-key'),
+      ('Listings', stats.listings, 'bi-buildings'),
+  ] %}
+  <div class="col-6 col-lg-3">
+    <div class="panel p-3 d-flex align-items-center gap-3 h-100">
+      <span class="icon-box icon-box-sm"><i class="bi {{ icon }}"></i></span>
+      <div>
+        <div class="text-muted small">{{ label }}</div>
+        <div class="fs-4 fw-semibold">{{ value }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="panel p-3 h-100">
+      <div class="text-muted small">Average rent (all listings)</div>
+      <div class="price">KSh {{ "{:,.0f}".format(stats.avg_rent) }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="panel p-3 h-100">
+      <div class="text-muted small">Landlords waiting for verification</div>
+      <div class="fs-4 fw-semibold">{{ stats.pending_landlords }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="panel p-3 h-100">
+      <div class="text-muted small">Deactivated accounts</div>
+      <div class="fs-4 fw-semibold">{{ stats.inactive }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="panel p-3 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">Newest users</h6>
+        <a href="{{ url_for('admin.users') }}" class="small text-decoration-none">See all</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for u in recent_users %}
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            <span>{{ u.full_name }} <span class="text-muted small d-block">{{ u.email }}</span></span>
+            <span class="badge rounded-pill text-bg-light border">{{ u.role.name }}</span>
+          </li>
+        {% else %}
+          <li class="list-group-item px-0 text-muted">No users yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel p-3 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">Newest listings</h6>
+        <a href="{{ url_for('admin.listings') }}" class="small text-decoration-none">See all</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for l in recent_listings %}
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            <span>
+              <a href="{{ url_for('listings.detail', listing_id=l.listing_id) }}" class="text-decoration-none">{{ l.title }}</a>
+              <span class="text-muted small d-block">{{ location(l) }}</span>
+            </span>
+            <span class="fw-semibold text-nowrap">KSh {{ "{:,.0f}".format(l.rentamount) }}</span>
+          </li>
+        {% else %}
+          <li class="list-group-item px-0 text-muted">No listings yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

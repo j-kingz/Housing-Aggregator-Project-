@@ -33,6 +33,11 @@
               <a class="nav-link {{ 'active' if page == 'listings.create' }}" href="{{ url_for('listings.create') }}"><i class="bi bi-plus-circle me-1"></i>Add listing</a>
             </li>
           {% endif %}
+          {% if current_user.is_authenticated and current_user.is_admin %}
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if page and page.startswith('admin.') }}" href="{{ url_for('admin.dashboard') }}"><i class="bi bi-shield-lock me-1"></i>Admin</a>
+            </li>
+          {% endif %}
         </ul>
 
         <div class="d-flex align-items-center gap-2 my-2 my-md-0">

@@ -1,0 +1,56 @@
+{% extends "admin/_layout.html" %}
+{% from "_macros.html" import location %}
+{% block title %}Listings | Admin{% endblock %}
+{% block admin_content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-9">
+    <input type="text" name="q" class="form-control" placeholder="Search by title, area or city" value="{{ q }}">
+  </div>
+  <div class="col-md-3 d-grid">
+    <button class="btn btn-primary"><i class="bi bi-search me-1"></i> Search</button>
+  </div>
+</form>
+
+<div class="panel table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr>
+        <th class="ps-4">#</th>
+        <th>Title</th>
+        <th>Location</th>
+        <th class="text-end">Rent (KSh)</th>
+        <th>Source</th>
+        <th>Listed</th>
+        <th class="pe-4"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in listings %}
+      <tr>
+        <td class="ps-4 text-muted">{{ l.listing_id }}</td>
+        <td><a href="{{ url_for('listings.detail', listing_id=l.listing_id) }}" class="fw-medium text-decoration-none">{{ l.title }}</a></td>
+        <td class="text-muted">{{ location(l) }}</td>
+        <td class="text-end fw-semibold">{{ "{:,.0f}".format(l.rentamount) }}</td>
+        <td class="small">
+          {% if l.landlord %}
+            <i class="bi bi-person"></i> {{ l.landlord.user.full_name }}
+          {% else %}
+            <i class="bi bi-globe"></i> {{ l.source_name or 'scraped' }}
+          {% endif %}
+        </td>
+        <td class="text-muted small">{{ l.listingdate.strftime('%d %b %Y') if l.listingdate }}</td>
+        <td class="pe-4 text-end">
+          <form method="post" action="{{ url_for('admin.delete_listing', listing_id=l.listing_id) }}"
+                onsubmit="return confirm('Remove this listing?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-center text-muted py-4">No listings found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
