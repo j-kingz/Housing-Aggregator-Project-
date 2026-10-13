@@ -17,8 +17,9 @@ Right now the project is at about 40%. What works:
 - Users can edit their profile. Renters can save a preferred area and budget, landlords can add a business name.
 - The MySQL database follows the schema diagram in the drawio file, so you can open it in MySQL Workbench and see all the tables.
 - All forms have CSRF protection (Flask-WTF).
+- There's an admin area. Admins can see a quick overview (user and listing counts, average rent), deactivate or reactivate accounts, verify landlords and remove any listing.
 
-Still to do: the real scraper (there's a starting version in `scraper/` that reads a sample HTML page), the price analytics dashboard, notifications for search alerts, the payment flow and the admin side.
+Still to do: the real scraper (there's a starting version in `scraper/` that reads a sample HTML page), the price analytics dashboard, notifications for search alerts, the payment flow, and managing scraping sources from the admin side.
 
 ## What I used
 
@@ -54,7 +55,15 @@ You need Python 3.10 or newer and MySQL Server running locally.
    python -m scraper.scraper
    ```
 
-6. Start the site:
+6. (Optional) Make an admin account. You can't sign up as an admin on the website, so it's done from the terminal:
+
+   ```powershell
+   python create_admin.py
+   ```
+
+   It asks for a name, email and password. After logging in with that account you'll see an **Admin** tab in the navbar.
+
+7. Start the site:
 
    ```powershell
    python run.py
@@ -94,11 +103,13 @@ app/
   auth/              register, login, logout
   main/              search page and profile
   listings/          add / edit / delete listings
+  admin/             admin overview, users and listings
   templates/         the HTML pages
   static/css/        a bit of extra styling
 scraper/             scraper (work in progress)
 config.py            reads settings from .env
 init_db.py           creates the database
+create_admin.py      makes an admin account
 run.py               starts the server
 ```
 
