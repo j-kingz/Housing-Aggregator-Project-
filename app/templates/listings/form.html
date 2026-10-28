@@ -65,6 +65,33 @@
       </div>
     </div>
 
+    <h6 class="border-top pt-3 mt-2">Exact unit location and availability</h6>
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="building_name">Building name</label>
+        <input type="text" id="building_name" name="building_name" class="form-control" maxlength="150"
+               placeholder="e.g. Riverside Towers" value="{{ listing.building_name or '' }}">
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="room_number">Room / unit number</label>
+        <input type="text" id="room_number" name="room_number" class="form-control" maxlength="30"
+               placeholder="e.g. 4B" value="{{ listing.room_number or '' }}">
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="floor_number">Floor number</label>
+        <input type="number" id="floor_number" name="floor_number" class="form-control" min="-5" max="200"
+               placeholder="e.g. 4" value="{{ listing.floor_number if listing.floor_number is not none else '' }}">
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="availability_status">Availability</label>
+        <select id="availability_status" name="availability_status" class="form-select">
+          {% for key, label in availability_statuses.items() %}
+            <option value="{{ key }}" {% if (listing.availability_status or 'unknown') == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
     <div class="mb-4">
       <label class="form-label" for="buildingnumber">Building / house number <span class="text-muted">(optional)</span></label>
       <input type="text" id="buildingnumber" name="buildingnumber" class="form-control" maxlength="20"
