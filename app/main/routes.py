@@ -25,6 +25,13 @@ def to_int(value):
         return None
 
 
+def to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @main_bp.route("/")
 def home():
     """The centralized search portal.
@@ -34,11 +41,14 @@ def home():
     several sites.
     """
     location = request.args.get("location", "").strip()
+    place_lat = to_float(request.args.get("place_lat"))
+    place_lng = to_float(request.args.get("place_lng"))
     area = request.args.get("area", "").strip()
     category = request.args.get("category", "").strip()
     max_price = to_int(request.args.get("max_price"))
     bedrooms = to_int(request.args.get("bedrooms"))
     source = request.args.get("source", "").strip()
+    availability = request.args.get("availability", "").strip()
     sort = request.args.get("sort", "newest").strip() or "newest"
     page = to_int(request.args.get("page")) or 1
 
@@ -46,9 +56,19 @@ def home():
 
     if location:
         like = f"%{location}%"
-        query = query.filter(
-            or_(Property.city.ilike(like), Property.address.ilike(like))
-        )
+        location_matches = [
+            Property.city.ilike(like),
+            Property.address.ilike(like),
+            Property.building_name.ilike(like),
+            Property.buildingnumber.ilike(like),
+            Property.title.ilike(like),
+        ]
+        if place_lat is not None and place_lng is not None:
+            location_matches.append(
+                (Property.latitude.between(place_lat - 0.05, place_lat + 0.05))
+                & (Property.longitude.between(place_lng - 0.05, place_lng + 0.05))
+            )
+        query = query.filter(or_(*location_matches))
     if area:
         query = query.filter(Property.address.ilike(area))
     if category:
@@ -63,6 +83,8 @@ def home():
         if source_id is not None:
             conditions.append(Property.source_id == source_id)
         query = query.filter(or_(*conditions))
+    if availability in ("vacant", "occupied", "unknown"):
+        query = query.filter(Property.availability_status == availability)
 
     if sort == "price_low":
         query = query.order_by(Property.rentamount.asc(), Property.listing_id.desc())
@@ -97,12 +119,15 @@ def home():
         pagination=pagination,
         verdicts=verdicts,
         location=location,
+        place_lat=place_lat or "",
+        place_lng=place_lng or "",
         area=area,
         category=category,
         categories=CATEGORIES,
         max_price=max_price or "",
         bedrooms=bedrooms or "",
         source=source,
+        availability=availability,
         sources=sources,
         sort=sort,
         sorts=SORTS,
