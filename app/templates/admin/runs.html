@@ -1,0 +1,79 @@
+{% extends "admin/_layout.html" %}
+{% from "_macros.html" import stat_card %}
+{% block title %}Scraper runs | Admin{% endblock %}
+{% block admin_content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h6 class="mb-0">Scraper run log</h6>
+    <span class="text-muted small">Every run, what it found and what was saved.</span>
+  </div>
+  <form method="post" action="{{ url_for('admin.record_snapshot') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-outline-primary btn-sm"><i class="bi bi-camera me-1"></i> Record market snapshot</button>
+  </form>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">{{ stat_card('Runs logged', totals.runs, icon='bi-journal-text') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Listings saved', totals.saved, 'across all runs', icon='bi-cloud-arrow-down') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Listings held', totals.listings, icon='bi-buildings') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Still active', totals.active, 'not marked stale', icon='bi-check2-circle') }}</div>
+</div>
+
+<div class="panel table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr>
+        <th class="ps-4">Started</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th class="text-center">Pages</th>
+        <th class="text-center">Found</th>
+        <th class="text-center">Saved</th>
+        <th class="text-center">Duplicates</th>
+        <th class="text-center">Skipped</th>
+        <th class="pe-4"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="ps-4 text-muted small">
+          {{ run.started_at.strftime('%d %b %Y %H:%M') if run.started_at else '-' }}
+          {% if run.finished_at %}<span class="d-block">took {{ ((run.finished_at - run.started_at).total_seconds())|round(0) }}s</span>{% endif %}
+        </td>
+        <td>{{ run.source.name if run.source else 'Removed source' }}</td>
+        <td>
+          {% if run.status == 'success' %}
+            <span class="badge text-bg-success">success</span>
+          {% elif run.status == 'running' %}
+            <span class="badge text-bg-info">running</span>
+          {% else %}
+            <span class="badge text-bg-danger">{{ run.status }}</span>
+          {% endif %}
+          {% if run.message %}<span class="text-muted small d-block">{{ run.message }}</span>{% endif %}
+        </td>
+        <td class="text-center">{{ run.pages_fetched }}</td>
+        <td class="text-center">{{ run.listings_found }}</td>
+        <td class="text-center fw-semibold">{{ run.listings_saved }}</td>
+        <td class="text-center text-muted">{{ run.duplicates_skipped }}</td>
+        <td class="text-center text-muted">{{ run.errors_skipped }}</td>
+        <td class="pe-4 text-end">
+          <form method="post" action="{{ url_for('admin.delete_run', run_id=run.run_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="9" class="text-center text-muted py-4">
+          No runs yet. Run <code>python -m scraper.cli run</code> to get started.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
