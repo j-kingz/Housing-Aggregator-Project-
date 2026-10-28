@@ -16,7 +16,7 @@
     <thead>
       <tr>
         <th class="ps-4">Property</th>
-        <th>Location</th>
+        <th>Building / unit</th>
         <th class="text-end">Rent (KSh)</th>
         <th class="text-center">Beds</th>
         <th>Listed</th>
@@ -32,7 +32,12 @@
             <a href="{{ url_for('listings.detail', listing_id=l.listing_id) }}" class="fw-medium text-decoration-none">{{ l.title }}</a>
           </div>
         </td>
-        <td class="text-muted">{{ location(l) }}</td>
+        <td class="text-muted">
+          {{ l.building_name or location(l) }}
+          {% if l.floor_number is not none %} · Floor {{ l.floor_number }}{% endif %}
+          {% if l.room_number %} · Room {{ l.room_number }}{% endif %}
+          <span class="d-block small">{{ 'Vacant' if l.availability_status == 'vacant' else ('Occupied' if l.availability_status == 'occupied' else 'Unknown') }}</span>
+        </td>
         <td class="text-end fw-semibold">{{ "{:,.0f}".format(l.rentamount) }}</td>
         <td class="text-center">{{ l.bedrooms if l.bedrooms is not none else '-' }}</td>
         <td class="text-muted small">{{ l.listingdate.strftime('%d %b %Y') if l.listingdate }}</td>
