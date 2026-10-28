@@ -18,6 +18,7 @@ from app.extensions import db
 BACKFILL_DEFAULTS = {
     "properties": {
         "is_active": "1",
+        "availability_status": "'unknown'",
     },
     "notification": {
         "isread": "0",
