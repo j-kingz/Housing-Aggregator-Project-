@@ -31,6 +31,10 @@ PROFILES = {
         "size": [".size"],
         "amenities": [".amenities"],
         "description": [".description"],
+        "building_name": [".building", "[class*='building']"],
+        "floor_number": [".floor", "[class*='floor']"],
+        "room_number": [".room", "[class*='unit']", "[class*='room']"],
+        "availability": [".availability", "[class*='avail']"],
     },
     "buyrentkenya": {
         "card": [
@@ -64,6 +68,10 @@ PROFILES = {
         "size": [".size", "[class*='size']"],
         "amenities": [".amenities", "[class*='amenit']"],
         "description": [".description", "[class*='description']"],
+        "building_name": [".building", "[class*='building']"],
+        "floor_number": [".floor", "[class*='floor']"],
+        "room_number": [".room", "[class*='unit']", "[class*='room']"],
+        "availability": [".availability", "[class*='avail']"],
     },
     "property24": {
         "card": [
@@ -97,6 +105,10 @@ PROFILES = {
         "size": [".size", "[class*='size']"],
         "amenities": [".amenities", "[class*='amenit']"],
         "description": [".description", "[class*='description']"],
+        "building_name": [".building", "[class*='building']"],
+        "floor_number": [".floor", "[class*='floor']"],
+        "room_number": [".room", "[class*='unit']", "[class*='room']"],
+        "availability": [".availability", "[class*='avail']"],
     },
     "generic": {
         "card": [],
@@ -242,6 +254,10 @@ def _record_from_card(card, settings, known_areas, base_url):
         description = _clean_text(card_text)[:2000]
 
     amenities_text = _clean_text(_first_text(card, settings.get("amenities") or []))
+    building_name = _clean_text(_first_text(card, settings.get("building_name") or []))
+    floor_text = _clean_text(_first_text(card, settings.get("floor_number") or []))
+    room_number = _clean_text(_first_text(card, settings.get("room_number") or []))
+    availability = _clean_text(_first_text(card, settings.get("availability") or []))
 
     return {
         "title": title,
@@ -251,6 +267,10 @@ def _record_from_card(card, settings, known_areas, base_url):
         "location_text": location_text,
         "description": description,
         "amenities_text": amenities_text,
+        "building_name": building_name,
+        "floor_number": floor_text,
+        "room_number": room_number,
+        "availability_status": _normalise_availability(availability),
         "size_text": size_text,
         "url": url,
         "external_id": _external_id_from_url(url),
@@ -263,6 +283,15 @@ def _find_price_in_text(text):
         return None
     match = PRICE_RE.search(text)
     return match.group(0).strip() if match else None
+
+
+def _normalise_availability(text):
+    lowered = (text or "").lower()
+    if re.search(r"\b(vacant|available|to let|for rent)\b", lowered):
+        return "vacant"
+    if re.search(r"\b(occupied|let out|rented)\b", lowered):
+        return "occupied"
+    return "unknown"
 
 
 def _find_area_in_text(text, known_areas):
