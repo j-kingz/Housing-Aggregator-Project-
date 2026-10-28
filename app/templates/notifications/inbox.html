@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_state %}
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <div>
+    <h2 class="mb-0">Notifications</h2>
+    <span class="text-muted small">
+      {{ unread }} unread{% if unread != 1 %}s{% endif %} of {{ notifications|length }}
+    </span>
+  </div>
+  <div class="d-flex gap-2">
+    {% if unread %}
+      <form method="post" action="{{ url_for('notifications.mark_all_read') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-primary btn-sm"><i class="bi bi-check2-all me-1"></i> Mark all read</button>
+      </form>
+    {% endif %}
+    <a class="btn btn-primary btn-sm" href="{{ url_for('notifications.alerts') }}">
+      <i class="bi bi-bell me-1"></i> My search alerts
+    </a>
+  </div>
+</div>
+
+{% if notifications %}
+<div class="panel">
+  <ul class="list-group list-group-flush">
+    {% for n in notifications %}
+    <li class="list-group-item d-flex gap-3 {% if not n.isread %}notification-unread{% endif %}">
+      <span class="icon-box icon-box-sm flex-shrink-0">
+        <i class="bi {% if n.type == 'listing' %}bi-house-check{% elif n.type == 'budget' %}bi-wallet2{% else %}bi-bell{% endif %}"></i>
+      </span>
+      <div class="flex-grow-1">
+        <div class="small">{{ n.message }}</div>
+        <div class="text-muted small mt-1">
+          {{ n.date.strftime('%d %b %Y') if n.date else '' }}
+          {% if n.search_alert %} &middot; from alert "{{ n.search_alert.criteria }}"{% endif %}
+          {% if n.listing %} &middot; KSh {{ "{:,.0f}".format(n.listing.rentamount) }}{% endif %}
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-2 flex-shrink-0">
+        {% if n.listing %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('listings.detail', listing_id=n.listing.listing_id) }}">View</a>
+        {% endif %}
+        {% if not n.isread %}
+          <form method="post" action="{{ url_for('notifications.mark_read', notification_id=n.notification_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-light" title="Mark as read"><i class="bi bi-check"></i></button>
+          </form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% else %}
+  {{ empty_state('bi-bell-slash', 'No notifications yet.',
+      'Save a search alert and you will be told here when a matching listing is added.') }}
+{% endif %}
+{% endblock %}
