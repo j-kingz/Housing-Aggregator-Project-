@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_icon, location as where, verdict_badge, page_controls, empty_state %}
+{% block title %}Search{% endblock %}
+
+{% block hero %}
+<section class="hero">
+  <div class="container">
+    <h1 class="mb-2">Find a place to rent without the endless scrolling</h1>
+    <p class="mb-0">Listings from different sites in one place, with the market price of every area alongside.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="search-box">
+  <div class="row g-2">
+    <div class="col-md-4">
+      <label class="form-label small text-muted mb-1" for="location">Where</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+        <input type="text" id="location" name="location" class="form-control" placeholder="Area or city e.g. Kilimani"
+               value="{{ location }}">
+      </div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1" for="area">Neighbourhood</label>
+      <select id="area" name="area" class="form-select">
+        <option value="">Any neighbourhood</option>
+        {% for a in areas %}
+          <option value="{{ a.name }}" {% if area == a.name %}selected{% endif %}>{{ a.name }}{{ '' if a.city == 'Nairobi' else ' (' ~ a.city ~ ')' }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1" for="max_price">Max rent</label>
+      <div class="input-group">
+        <span class="input-group-text">KSh</span>
+        <input type="number" id="max_price" name="max_price" class="form-control" placeholder="Any" min="0"
+               value="{{ max_price }}">
+      </div>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1" for="bedrooms">Bedrooms</label>
+      <select id="bedrooms" name="bedrooms" class="form-select">
+        <option value="">Any</option>
+        {% for n in range(1, 5) %}
+          <option value="{{ n }}" {% if bedrooms == n %}selected{% endif %}>{{ n }}+</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1 d-grid align-self-end">
+      <button type="submit" class="btn btn-accent py-2"><i class="bi bi-search"></i></button>
+    </div>
+  </div>
+
+  <div class="row g-2 mt-1">
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1" for="category">Category</label>
+      <select id="category" name="category" class="form-select form-select-sm">
+        <option value="">Any type</option>
+        {% for c in categories %}
+          <option value="{{ c }}" {% if category == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1" for="source">Source</label>
+      <select id="source" name="source" class="form-select form-select-sm">
+        <option value="">All sources</option>
+        {% for s in sources %}
+          <option value="{{ s.name }}" {% if source == s.name %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1" for="sort">Sort by</label>
+      <select id="sort" name="sort" class="form-select form-select-sm">
+        {% for key, label in sorts.items() %}
+          <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3 d-flex align-items-end gap-2">
+      <a class="btn btn-light btn-sm" href="{{ url_for('main.home') }}">Clear filters</a>
+      <a class="btn btn-outline-primary btn-sm" href="{{ url_for('analytics.dashboard') }}">
+        <i class="bi bi-graph-up me-1"></i> Price analytics
+      </a>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h5 class="mb-0">Available listings</h5>
+    <span class="text-muted small">
+      {{ pagination.total if pagination else 0 }} result{{ '' if pagination and pagination.total == 1 else 's' }}
+    </span>
+  </div>
+  {% if current_user.is_authenticated and current_user.is_renter %}
+    <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#saveSearch">
+      <i class="bi bi-bell me-1"></i> Save this search
+    </button>
+  {% endif %}
+</div>
+
+{% if listings %}
+<div class="row g-4">
+  {% for listing in listings %}
+  <div class="col-sm-6 col-lg-4">
+    <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="text-decoration-none text-reset">
+      <div class="card listing-card h-100">
+        <div class="listing-thumb">
+          {% if listing.category %}<span class="tag">{{ listing.category }}</span>{% endif %}
+          {{ category_icon(listing.category) }}
+          {% set verdict = verdicts.get(listing.listing_id) %}
+          {% if verdict and verdict.verdict in ('cheap', 'expensive') %}
+            <span class="tag tag-verdict tag-{{ verdict.verdict }}">
+              {{ '%.0f%%'|format(verdict.difference_percent|abs) }} {{ 'below' if verdict.verdict == 'cheap' else 'above' }}
+            </span>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small>/ month</small></div>
+          <h6 class="mb-1 text-truncate">{{ listing.title }}</h6>
+          <p class="text-muted small mb-2"><i class="bi bi-geo-alt me-1"></i>{{ where(listing) }}</p>
+          {% if listing.amenities %}
+            <p class="text-muted small mb-2 listing-amenities">{{ listing.amenities }}</p>
+          {% endif %}
+          <div class="facts">
+            <span><i class="bi bi-door-closed"></i>{{ listing.bedrooms if listing.bedrooms is not none else '-' }} bed</span>
+            <span><i class="bi bi-droplet"></i>{{ listing.bathrooms if listing.bathrooms is not none else '-' }} bath</span>
+            {% if listing.source_name %}
+              <span class="ms-auto listing-source"><i class="bi bi-globe"></i>{{ listing.source_name }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+{{ page_controls(pagination, 'main.home', {
+  'location': location, 'area': area, 'category': category, 'max_price': max_price,
+  'bedrooms': bedrooms, 'source': source, 'sort': sort}) }}
+{% else %}
+  {{ empty_state('bi-search', 'Nothing matches that search yet.',
+      'Try a different area, a higher budget, or clear the filters to see everything we hold.') }}
+{% endif %}
+
+{% if current_user.is_authenticated and current_user.is_renter %}
+<div class="modal fade" id="saveSearch" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('notifications.alerts') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h6 class="modal-title">Save this search</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">You will be told when a listing that matches these filters is added.</p>
+          <div class="mb-3">
+            <label class="form-label">Area</label>
+            <input type="text" name="area" class="form-control" maxlength="100" value="{{ area or location }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Maximum rent</label>
+            <input type="number" name="maxprice" class="form-control" min="0" step="any" value="{{ max_price }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Minimum bedrooms</label>
+            <input type="number" name="minbedrooms" class="form-control" min="0" max="50" value="{{ bedrooms }}">
+          </div>
+          <input type="hidden" name="frequency" value="instant">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save alert</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
