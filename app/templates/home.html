@@ -18,7 +18,7 @@
       <label class="form-label small text-muted mb-1" for="location">Where</label>
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
-        <input type="text" id="location" name="location" class="form-control" placeholder="Area or city e.g. Kilimani"
+        <input type="text" id="location" name="location" class="form-control" placeholder="Search a building, place or area"
                value="{{ location }}">
       </div>
     </div>
@@ -38,6 +38,8 @@
         <input type="number" id="max_price" name="max_price" class="form-control" placeholder="Any" min="0"
                value="{{ max_price }}">
       </div>
+      <input type="hidden" id="place_lat" name="place_lat" value="{{ place_lat }}">
+      <input type="hidden" id="place_lng" name="place_lng" value="{{ place_lng }}">
     </div>
     <div class="col-md-2">
       <label class="form-label small text-muted mb-1" for="bedrooms">Bedrooms</label>
@@ -61,6 +63,15 @@
         {% for c in categories %}
           <option value="{{ c }}" {% if category == c %}selected{% endif %}>{{ c }}</option>
         {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1" for="availability">Availability</label>
+      <select id="availability" name="availability" class="form-select form-select-sm">
+        <option value="">Any status</option>
+        <option value="vacant" {% if availability == 'vacant' %}selected{% endif %}>Vacant now</option>
+        <option value="occupied" {% if availability == 'occupied' %}selected{% endif %}>Occupied</option>
+        <option value="unknown" {% if availability == 'unknown' %}selected{% endif %}>Unknown</option>
       </select>
     </div>
     <div class="col-md-3">
@@ -123,6 +134,19 @@
           <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small>/ month</small></div>
           <h6 class="mb-1 text-truncate">{{ listing.title }}</h6>
           <p class="text-muted small mb-2"><i class="bi bi-geo-alt me-1"></i>{{ where(listing) }}</p>
+          {% if listing.building_name or listing.floor_number is not none or listing.room_number %}
+            <p class="text-muted small mb-2">
+              <i class="bi bi-door-open me-1"></i>
+              <strong>{{ listing.building_name or 'Building not specified' }}</strong>
+              {% if listing.floor_number is not none %} · Floor {{ listing.floor_number }}{% endif %}
+              {% if listing.room_number %} · Room {{ listing.room_number }}{% endif %}
+            </p>
+          {% endif %}
+          {% if listing.availability_status == 'vacant' %}
+            <span class="badge text-bg-success mb-2"><i class="bi bi-check-circle me-1"></i>Vacant room</span>
+          {% elif listing.availability_status == 'occupied' %}
+            <span class="badge text-bg-secondary mb-2">Occupied</span>
+          {% endif %}
           {% if listing.amenities %}
             <p class="text-muted small mb-2 listing-amenities">{{ listing.amenities }}</p>
           {% endif %}
@@ -142,7 +166,9 @@
 
 {{ page_controls(pagination, 'main.home', {
   'location': location, 'area': area, 'category': category, 'max_price': max_price,
-  'bedrooms': bedrooms, 'source': source, 'sort': sort}) }}
+  'bedrooms': bedrooms, 'source': source, 'sort': sort, 'place_lat': place_lat,
+  'place_lng': place_lng, 'availability': availability, 'building': building,
+  }) }}
 {% else %}
   {{ empty_state('bi-search', 'Nothing matches that search yet.',
       'Try a different area, a higher budget, or clear the filters to see everything we hold.') }}
@@ -182,5 +208,31 @@
     </div>
   </div>
 </div>
+{% endif %}
+
+{% if google_maps_api_key %}
+<script>
+  function initPlaceAutocomplete() {
+    const input = document.getElementById('location');
+    if (!input || !window.google || !google.maps.places) return;
+    const autocomplete = new google.maps.places.Autocomplete(input, {
+      fields: ['formatted_address', 'geometry', 'name'],
+      types: ['establishment', 'geocode']
+    });
+    autocomplete.addListener('place_changed', function () {
+      const place = autocomplete.getPlace();
+      const location = place.geometry && place.geometry.location;
+      if (!location) return;
+      document.getElementById('place_lat').value = location.lat();
+      document.getElementById('place_lng').value = location.lng();
+      input.value = place.name || place.formatted_address || input.value;
+    });
+    input.addEventListener('input', function () {
+      document.getElementById('place_lat').value = '';
+      document.getElementById('place_lng').value = '';
+    });
+  }
+</script>
+<script async defer src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key|urlencode }}&libraries=places&callback=initPlaceAutocomplete"></script>
 {% endif %}
 {% endblock %}
