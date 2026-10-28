@@ -225,6 +225,10 @@ class TestCleanListing:
             "size_text": "120 sqm",
             "url": "https://example.com/listing/1",
             "external_id": "1",
+            "building_name": "Riverside Towers",
+            "floor_number": "Floor 4",
+            "room_number": "4B",
+            "availability_status": "vacant",
         }
         result = clean_listing(raw, known_areas=[{"name": "Kilimani"}])
 
@@ -238,6 +242,7 @@ class TestCleanListing:
         assert result["size_sqft"] == 1292
         assert result["external_id"] == "1"
         assert result["fingerprint"]
+        assert result["availability_status"] == "vacant"
 
     def test_a_record_without_a_price_is_dropped(self):
         raw = {"title": "Some flat", "price_text": "Ask for price"}
