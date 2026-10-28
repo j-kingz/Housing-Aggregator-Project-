@@ -18,6 +18,11 @@ The project now covers the Level 2 chapters of the proposal: data collection (sc
 - Users can edit their profile. Renters can save a preferred area, budget and commute settings, landlords can add a business name.
 - Admins can see a quick overview, deactivate or reactivate accounts, verify landlords and remove any listing.
 - All forms have CSRF protection (Flask-WTF).
+- Landlords can record the exact building, floor and room/unit for a listing,
+  together with whether it is vacant, occupied or unknown.
+- The home search supports building/unit filters and optional Google Places
+  building search. Set `GOOGLE_MAPS_API_KEY` in `.env` to enable autocomplete;
+  text search remains available without the key.
 
 **Scraping (proposal chapter 3.3)**
 
