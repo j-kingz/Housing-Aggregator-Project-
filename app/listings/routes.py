@@ -12,6 +12,11 @@ from app.models import Area, Property
 listings_bp = Blueprint("listings", __name__, url_prefix="/listings")
 
 CATEGORIES = ["Apartment", "Bedsitter", "Studio", "Maisonette", "Bungalow", "Townhouse"]
+AVAILABILITY_STATUSES = {
+    "vacant": "Vacant",
+    "occupied": "Occupied",
+    "unknown": "Availability unknown",
+}
 
 
 def landlord_required(view):
@@ -43,6 +48,9 @@ def read_form(form):
         "city": form.get("city", "").strip(),
         "address": form.get("address", "").strip(),
         "buildingnumber": form.get("buildingnumber", "").strip() or None,
+        "building_name": form.get("building_name", "").strip() or None,
+        "room_number": form.get("room_number", "").strip() or None,
+        "availability_status": form.get("availability_status", "unknown").strip() or "unknown",
     }
 
     if not data["title"]:
@@ -51,6 +59,16 @@ def read_form(form):
         errors.append("City is required.")
     if data["category"] not in CATEGORIES:
         errors.append("Pick a category from the list.")
+    if data["availability_status"] not in AVAILABILITY_STATUSES:
+        errors.append("Pick a valid availability status.")
+
+    floor_raw = form.get("floor_number", "").strip()
+    if not floor_raw:
+        data["floor_number"] = None
+    elif floor_raw.lstrip("-").isdigit() and -5 <= int(floor_raw) <= 200:
+        data["floor_number"] = int(floor_raw)
+    else:
+        errors.append("Floor should be a whole number between -5 and 200.")
 
     try:
         rent = Decimal(form.get("rentamount", "").strip())
@@ -119,7 +137,8 @@ def create():
             for e in errors:
                 flash(e, "danger")
             return render_template("listings/form.html", listing=request.form,
-                                   categories=CATEGORIES, editing=False), 400
+                                       categories=CATEGORIES, availability_statuses=AVAILABILITY_STATUSES,
+                                       editing=False), 400
 
         listing = Property(landlord_id=current_user.user_id, **data)
         db.session.add(listing)
@@ -127,7 +146,8 @@ def create():
         flash("Listing added.", "success")
         return redirect(url_for("listings.detail", listing_id=listing.listing_id))
 
-    return render_template("listings/form.html", listing={}, categories=CATEGORIES, editing=False)
+    return render_template("listings/form.html", listing={}, categories=CATEGORIES,
+                           availability_statuses=AVAILABILITY_STATUSES, editing=False)
 
 
 @listings_bp.route("/<int:listing_id>/edit", methods=["GET", "POST"])
@@ -141,7 +161,8 @@ def edit(listing_id):
             for e in errors:
                 flash(e, "danger")
             return render_template("listings/form.html", listing=request.form,
-                                   categories=CATEGORIES, editing=True, listing_id=listing_id), 400
+                                   categories=CATEGORIES, availability_statuses=AVAILABILITY_STATUSES,
+                                   editing=True, listing_id=listing_id), 400
 
         for key, value in data.items():
             setattr(listing, key, value)
@@ -150,7 +171,8 @@ def edit(listing_id):
         return redirect(url_for("listings.detail", listing_id=listing_id))
 
     return render_template("listings/form.html", listing=listing,
-                           categories=CATEGORIES, editing=True, listing_id=listing_id)
+                           categories=CATEGORIES, availability_statuses=AVAILABILITY_STATUSES,
+                           editing=True, listing_id=listing_id)
 
 
 @listings_bp.route("/<int:listing_id>/delete", methods=["POST"])
