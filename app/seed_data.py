@@ -1,0 +1,106 @@
+"""Reference data that gets loaded into the database on setup.
+
+The area list gives the search page proper geographic filters and gives the
+distance and commute estimates somewhere to anchor to. Coordinates are
+approximate neighbourhood centroids, which is accurate enough for the
+straight-line distances the platform reports.
+"""
+
+# name, city, county, latitude, longitude, description
+AREAS = [
+    ("Nairobi CBD", "Nairobi", "Nairobi", -1.286400, 36.817200, "Central business district"),
+    ("Westlands", "Nairobi", "Nairobi", -1.253600, 36.757400, "Commercial hub near the Westlands mall"),
+    ("Kilimani", "Nairobi", "Nairobi", -1.244000, 36.747000, "Upscale residential area"),
+    ("Parklands", "Nairobi", "Nairobi", -1.266000, 36.762000, "Mixed residential and office area"),
+    ("Lavington", "Nairobi", "Nairobi", -1.269000, 36.729000, "Low density residential"),
+    ("Upper Hill", "Nairobi", "Nairobi", -1.232000, 36.768000, "Quiet residential close to the CBD"),
+    ("Riverside", "Nairobi", "Nairobi", -1.264000, 36.790000, "Offices and apartments along Riverside Drive"),
+    ("Kileleshwa", "Nairobi", "Nairobi", -1.256000, 36.746000, "Residential west of Westlands"),
+    ("Dagoretti", "Nairobi", "Nairobi", -1.277000, 36.750000, "Dense residential suburb"),
+    ("Loreso", "Nairobi", "Nairobi", -1.287000, 36.739000, "Residential area near Lower Kabanga"),
+    ("Kawangware", "Nairobi", "Nairobi", -1.283000, 36.717000, "Western residential suburb"),
+    ("Kitisuru", "Nairobi", "Nairobi", -1.245000, 36.758000, "Residential beside Forest Way"),
+    ("Milimani", "Nairobi", "Nairobi", -1.287000, 36.802000, "Parks and upmarket apartments"),
+    ("Jericho", "Nairobi", "Nairobi", -1.271000, 36.802000, "Residential estate near City Square"),
+    ("South B", "Nairobi", "Nairobi", -1.373000, 36.817000, "Growing residential area"),
+    ("South C", "Nairobi", "Nairobi", -1.355000, 36.818000, "Residential with several estates"),
+    ("Ngong", "Nairobi", "Nairobi", -1.360000, 36.650000, "Western edge suburb"),
+    ("Karen", "Nairobi", "Nairobi", -1.330000, 36.715000, "Large low density homes"),
+    ("Sameer", "Nairobi", "Nairobi", -1.316000, 36.812000, "Mombasa Road residential"),
+    ("Mombasa Road", "Nairobi", "Nairobi", -1.313000, 36.823000, "Transport corridor"),
+    ("Industrial Area", "Nairobi", "Nairobi", -1.316000, 36.840000, "Light industrial and commercial"),
+    ("Embakasi", "Nairobi", "Nairobi", -1.308000, 36.853000, "Residential east of the CBD"),
+    ("Makadara", "Nairobi", "Nairobi", -1.296000, 36.862000, "Inner eastern suburb"),
+    ("Pumwani", "Nairobi", "Nairobi", -1.290000, 36.850000, "Dense eastern suburb"),
+    ("Umoja", "Nairobi", "Nairobi", -1.286000, 36.879000, "Family oriented suburb"),
+    ("Huruma", "Nairobi", "Nairobi", -1.255000, 36.857000, "North eastern suburb"),
+    ("Ruaraka", "Nairobi", "Nairobi", -1.256000, 36.866000, "Estate based suburb"),
+    ("Kasarani", "Nairobi", "Nairobi", -1.231000, 36.882000, "Large residential area north of the CBD"),
+    ("Roysambu", "Nairobi", "Nairobi", -1.240000, 36.885000, "Growing estate area"),
+    ("Githurai", "Nairobi", "Nairobi", -1.220000, 36.870000, "Northern residential area"),
+    ("Eastleigh", "Nairobi", "Nairobi", -1.274000, 36.848000, "Diverse commercial and residential area"),
+    ("Buruburu", "Nairobi", "Nairobi", -1.229000, 36.878000, "Estate north east of Kasarani"),
+    ("Tena Estate", "Nairobi", "Nairobi", -1.245000, 36.885000, "Residential estate"),
+    ("Kikuyu", "Nairobi", "Nairobi", -1.233000, 36.670000, "Western suburb with tea estates"),
+    ("Imbaki", "Nairobi", "Nairobi", -1.254000, 36.676000, "Residential west of Kikuyu"),
+    ("Kariobangi", "Nairobi", "Nairobi", -1.239000, 36.879000, "North eastern residential"),
+    ("Langata", "Nairobi", "Nairobi", -1.320000, 36.760000, "South western residential"),
+    ("Kangemi", "Nairobi", "Nairobi", -1.226000, 36.746000, "Western residential"),
+    ("Kahawa", "Nairobi", "Nairobi", -1.218000, 36.885000, "North eastern residential"),
+    ("Makongeni", "Nairobi", "Nairobi", -1.296000, 36.862000, "Inner eastern suburb"),
+    ("Racecourse", "Nairobi", "Nairobi", -1.285000, 36.812000, "Dense central residential"),
+    ("Muthurwa", "Nairobi", "Nairobi", -1.295000, 36.813000, "Inner city residential"),
+    ("Mountain Top", "Nairobi", "Nairobi", -1.290000, 36.798000, "Residential near City Market"),
+    ("Britamis", "Nairobi", "Nairobi", -1.290000, 36.803000, "High rise apartments near the CBD"),
+    ("Lumumba Drive", "Nairobi", "Nairobi", -1.290000, 36.805000, "Apartment blocks near the CBD"),
+    ("Donholm", "Nairobi", "Nairobi", -1.305000, 36.862000, "Eastern residential estate"),
+    ("Zimmerman", "Nairobi", "Nairobi", -1.235000, 36.880000, "Northern residential"),
+
+    ("Nakuru Town", "Nakuru", "Nakuru", -0.303100, 36.080000, "Lakeside town centre"),
+    ("Naivasha", "Naivasha", "Nakuru", -0.716700, 36.433300, "Fast growing Rift Valley town"),
+    ("Mombasa CBD", "Mombasa", "Mombasa", -4.043500, 39.668200, "Coastal city centre"),
+    ("Nyali", "Mombasa", "Mombasa", -4.033300, 39.668900, "Mombasa north shore"),
+    ("Kisumu", "Kisumu", "Kisumu", -0.091700, 34.768000, "Lakeside city centre"),
+    ("Thika", "Thika", "Kiambu", -1.033300, 37.933300, "Industrial town north of Nairobi"),
+    ("Ruiru", "Ruiru", "Kiambu", -1.116700, 36.966700, "Industrial town on the Nairobi outskirts"),
+    ("Kiambu", "Kiambu", "Kiambu", -1.253900, 36.580000, "Town on the western edge of Nairobi"),
+    ("Limuru", "Limuru", "Kiambu", -1.100000, 36.633300, "Growing commuter town"),
+    ("Wanguri", "Wanguri", "Kiambu", -1.205000, 36.637000, "Rural commuter area"),
+    ("Athi River", "Athi River", "Machakos", -1.456900, 36.978300, "Rapidly expanding town"),
+    ("Machakos", "Machakos", "Machakos", -1.580000, 37.433300, "County headquarters town"),
+]
+
+# The sites the scraper can read. The administrator can enable, disable and
+# reconfigure these from the admin area.
+DEFAULT_SOURCES = [
+    {
+        "name": "BuyRentKenya",
+        "base_url": "https://www.buyrentkenya.com",
+        "listing_url": "https://www.buyrentkenya.com/property-for-rent",
+        "profile": "buyrentkenya",
+        "delay_seconds": 8.0,
+        "max_pages": 3,
+        "respects_robots": True,
+        "notes": "Commercial portal. Scraped slowly and only where robots.txt allows it.",
+    },
+    {
+        "name": "Property24",
+        "base_url": "https://www.property24.co.ke",
+        "listing_url": "https://www.property24.co.ke/to-rent",
+        "profile": "property24",
+        "delay_seconds": 10.0,
+        "max_pages": 3,
+        "respects_robots": True,
+        "notes": "Commercial portal. Delay kept high because the site is heavily used.",
+    },
+    {
+        "name": "Sample fixture",
+        "base_url": "",
+        "listing_url": "",
+        "profile": "fixture",
+        "delay_seconds": 0.0,
+        "max_pages": 1,
+        "respects_robots": False,
+        "notes": "Offline sample page bundled with the project, used for demos and tests.",
+    },
+]
