@@ -1,9 +1,10 @@
 """Tests that the pages render and the access rules hold."""
 
+import re
+
 from app.extensions import db
 from app.models import Property, RenterDetails
 from tests.conftest import login
-
 
 def add_listing(**extra):
     fields = {
@@ -31,6 +32,17 @@ class TestPublicPages:
         add_listing()
         response = client.get("/?location=Westlands&max_price=60000&bedrooms=2&sort=price_low")
         assert response.status_code == 200
+
+    def test_search_can_filter_by_building_unit_and_vacancy(self, client):
+        add_listing(
+            building_name="Riverside Towers",
+            floor_number=4,
+            room_number="4B",
+            availability_status="vacant",
+        )
+        response = client.get("/?location=Riverside&availability=vacant")
+        assert response.status_code == 200
+        assert b"Riverside Towers" in response.data
 
     def test_the_analytics_dashboard(self, client):
         add_listing()
@@ -75,6 +87,12 @@ class TestAccessRules:
         login(client, renter.email)
         assert client.get("/insights/budget").status_code == 200
 
+    def test_budget_form_includes_csrf_token(self, client, renter):
+        login(client, renter.email)
+        response = client.get("/insights/budget")
+        assert response.status_code == 200
+        assert re.search(rb'name="csrf_token"[^>]+value="[^"]+"', response.data)
+
 
 class TestRenterPages:
     def test_the_notification_inbox(self, client, renter):
@@ -109,11 +127,20 @@ class TestLandlordPages:
                 "bathrooms": "2",
                 "city": "Nairobi",
                 "address": "Westlands",
+                "building_name": "Riverside Towers",
+                "floor_number": "4",
+                "room_number": "4B",
+                "availability_status": "vacant",
             },
             follow_redirects=True,
         )
         assert response.status_code == 200
         assert Property.query.count() == 1
+        listing = Property.query.first()
+        assert listing.building_name == "Riverside Towers"
+        assert listing.floor_number == 4
+        assert listing.room_number == "4B"
+        assert listing.availability_status == "vacant"
 
     def test_a_landlord_cannot_edit_someone_elses_listing(self, client, landlord, renter):
         listing = add_listing()
