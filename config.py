@@ -16,6 +16,7 @@ class Config:
     DB_NAME = os.getenv("DB_NAME", "housing_aggregator_db")
     DB_USER = os.getenv("DB_USER", "root")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
     # quote_plus so a password with @ or / in it doesn't break the url
     SQLALCHEMY_DATABASE_URI = (
