@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_login import current_user
 
 from config import Config
 from app.extensions import csrf, db, login_manager
@@ -27,10 +28,27 @@ def create_app(config_class=Config):
     from app.main.routes import main_bp
     from app.listings.routes import listings_bp
     from app.admin.routes import admin_bp
+    from app.analytics.routes import analytics_bp
+    from app.insights.routes import insights_bp
+    from app.notifications.routes import notifications_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(listings_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(insights_bp)
+    app.register_blueprint(notifications_bp)
+
+    @app.context_processor
+    def inject_notifications():
+        """The unread notification count shown on the navbar bell."""
+        count = 0
+        renter = getattr(current_user, "renter", None)
+        if renter is not None:
+            from app.notifications.services import unread_count
+
+            count = unread_count(renter.renter_id)
+        return {"unread_notifications": count}
 
     return app

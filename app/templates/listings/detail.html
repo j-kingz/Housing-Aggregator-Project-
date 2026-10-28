@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_icon, location %}
+{% from "_macros.html" import category_icon, location, verdict_badge %}
 {% block title %}{{ listing.title }}{% endblock %}
 {% block content %}
 <a href="{{ url_for('main.home') }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Back to search</a>
@@ -13,7 +13,33 @@
           <span class="badge rounded-pill text-bg-light border mb-2">{{ listing.category }}</span>
         {% endif %}
         <h2 class="mb-1">{{ listing.title }}</h2>
-        <p class="text-muted mb-4"><i class="bi bi-geo-alt me-1"></i>{{ location(listing) }}</p>
+        <p class="text-muted mb-3"><i class="bi bi-geo-alt me-1"></i>{{ location(listing) }}</p>
+
+        <div class="mb-3">
+          {{ verdict_badge(verdict) }}
+          {% if verdict and verdict.benchmark_average %}
+            <span class="text-muted small">
+              The area average is KSh {{ "{:,.0f}".format(verdict.benchmark_average) }}
+              across {{ verdict.benchmark_count }} listing{{ '' if verdict.benchmark_count == 1 else 's' }}
+              {% if verdict.scope == 'area' %}in {{ listing.address }}{% else %}in {{ listing.city }}{% endif %}.
+            </span>
+          {% endif %}
+        </div>
+
+        {% if listing.description %}
+          <p class="listing-description mb-4">{{ listing.description }}</p>
+        {% endif %}
+
+        {% if listing.amenities %}
+          <div class="mb-4">
+            <h6 class="small text-uppercase text-muted fw-semibold">Amenities</h6>
+            <div class="d-flex flex-wrap gap-2">
+              {% for amenity in listing.amenities.split(',') %}
+                <span class="badge rounded-pill text-bg-light border">{{ amenity.strip() }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
 
         <div class="row g-3">
           <div class="col-6 col-md-3">
@@ -30,8 +56,8 @@
           </div>
           <div class="col-6 col-md-3">
             <div class="fact-tile">
-              <div class="label">Building no.</div>
-              <div class="value">{{ listing.buildingnumber or '-' }}</div>
+              <div class="label">Size</div>
+              <div class="value">{{ listing.size_sqft ~ ' sq ft' if listing.size_sqft else '-' }}</div>
             </div>
           </div>
           <div class="col-6 col-md-3">
@@ -41,6 +67,40 @@
             </div>
           </div>
         </div>
+
+        {% if insight and (insight.rent_to_income or insight.commute) %}
+        <div class="panel p-3 mt-4 insight-card">
+          <h6 class="mb-3"><i class="bi bi-person-check me-1"></i> How this works for you</h6>
+          <div class="row g-3">
+            {% if insight.rent_to_income and insight.rent_to_income.ratio_percent is not none %}
+              <div class="col-md-4">
+                <div class="text-muted small">Rent as a share of your income</div>
+                <div class="fs-5 fw-semibold {% if insight.rent_to_income.verdict == 'affordable' %}text-success{% elif insight.rent_to_income.verdict == 'stretch' %}text-warning{% else %}text-danger{% endif %}">
+                  {{ "%.0f%%"|format(insight.rent_to_income.ratio_percent) }}
+                </div>
+                <div class="text-muted small">{{ insight.rent_to_income.label }} (30% is the usual guideline)</div>
+              </div>
+            {% endif %}
+            {% if insight.commute and insight.commute.distance_km is not none %}
+              <div class="col-md-4">
+                <div class="text-muted small">Distance to {{ insight.workplace or 'your workplace' }}</div>
+                <div class="fs-5 fw-semibold">{{ "%.1f km"|format(insight.commute.distance_km) }}</div>
+                <div class="text-muted small">
+                  About {{ "%.0f minutes"|format(insight.commute.minutes) }} by {{ insight.commute.label|lower }}
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="text-muted small">Trip cost each way</div>
+                <div class="fs-5 fw-semibold">KSh {{ "{:,.0f}".format(insight.commute.cost) }}</div>
+                <div class="text-muted small">KSh {{ "{:,.0f}".format(insight.commute.cost * 2) }} a month both ways</div>
+              </div>
+            {% endif %}
+          </div>
+          {% if not insight.commute and current_user.is_renter %}
+            <a class="small" href="{{ url_for('insights.budget') }}">Set your workplace to see the commute cost &rarr;</a>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -49,6 +109,10 @@
     <div class="panel p-4">
       <div class="price fs-3">KSh {{ "{:,.0f}".format(listing.rentamount) }}</div>
       <div class="text-muted small mb-3">per month</div>
+
+      {% if listing.price_per_sqft %}
+        <div class="text-muted small mb-3">KSh {{ "%.0f"|format(listing.price_per_sqft) }} per square foot</div>
+      {% endif %}
 
       <div class="d-flex align-items-center gap-2 mb-3">
         <span class="avatar"><i class="bi bi-person"></i></span>
@@ -69,6 +133,12 @@
       {% if listing.source_url and listing.source_url.startswith(('http://', 'https://')) %}
         <a href="{{ listing.source_url }}" class="btn btn-outline-primary w-100 mb-2" target="_blank" rel="noopener noreferrer">
           <i class="bi bi-box-arrow-up-right me-1"></i> See the original listing
+        </a>
+      {% endif %}
+
+      {% if listing.area %}
+        <a class="btn btn-light w-100 mb-2" href="{{ url_for('analytics.area', area_name=listing.area.name, city=listing.area.city) }}">
+          <i class="bi bi-graph-up me-1"></i> {{ listing.area.name }} price analysis
         </a>
       {% endif %}
 

@@ -4,8 +4,10 @@ from functools import wraps
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from app.analytics import services as analytics
 from app.extensions import db
-from app.models import Property
+from app.insights import services as insights
+from app.models import Area, Property
 
 listings_bp = Blueprint("listings", __name__, url_prefix="/listings")
 
@@ -19,6 +21,8 @@ def landlord_required(view):
         if not current_user.is_landlord:
             flash("Only landlord accounts can manage listings.", "warning")
             return redirect(url_for("main.home"))
+        # a property points at a landlord row, so make sure one exists
+        current_user.ensure_landlord_details()
         return view(*args, **kwargs)
     return wrapper
 
@@ -71,8 +75,28 @@ def read_form(form):
 
 @listings_bp.route("/<int:listing_id>")
 def detail(listing_id):
+    """One listing, with the market context that tells you if it is fairly priced."""
     listing = db.get_or_404(Property, listing_id)
-    return render_template("listings/detail.html", listing=listing)
+
+    # what the market around it looks like
+    benchmarks = analytics.area_benchmarks()
+    verdict = analytics.listing_verdict(listing, benchmarks)
+
+    # the signed in renter's own numbers, when there are any
+    insight = None
+    renter = getattr(current_user, "renter", None)
+    if renter is not None:
+        area_lookup = {area.name.lower(): area for area in Area.query.all()}
+        insight = insights.analyse_listing(
+            listing, renter, area_lookup, renter.commute_mode or "matatu"
+        )
+
+    return render_template(
+        "listings/detail.html",
+        listing=listing,
+        verdict=verdict,
+        insight=insight,
+    )
 
 
 @listings_bp.route("/mine")

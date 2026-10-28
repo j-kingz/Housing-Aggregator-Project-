@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stat_card, empty_state, verdict_badge %}
+{% block title %}Budget analyser{% endblock %}
+
+{% block hero %}
+<section class="hero hero-compact">
+  <div class="container">
+    <h1 class="mb-2">Budget analyser</h1>
+    <p class="mb-0">Your budget against the market, with the commute worked out for every match.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <form method="post" class="panel p-4">
+      <h5 class="mb-3"><i class="bi bi-sliders me-1"></i> Your budget profile</h5>
+
+      <div class="mb-3">
+        <label class="form-label" for="monthlyincome">Monthly income (KSh)</label>
+        <input type="number" id="monthlyincome" name="monthlyincome" class="form-control" min="0" step="any"
+               value="{{ renter.monthlyincome or '' }}" placeholder="e.g. 80000">
+        <div class="form-text">Used for the rent to income comparison.</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="budgetrange">Budget range (KSh)</label>
+        <input type="text" id="budgetrange" name="budgetrange" class="form-control" maxlength="50"
+               value="{{ renter.budgetrange or '' }}" placeholder="e.g. 30,000 - 45,000">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="preferredlocation">Preferred area</label>
+        <input type="text" id="preferredlocation" name="preferredlocation" class="form-control" maxlength="100"
+               list="area-options" value="{{ renter.preferredlocation or '' }}" placeholder="e.g. Westlands">
+        <datalist id="area-options">
+          {% for a in areas %}<option value="{{ a.name }}">{{ a.city }}</option>{% endfor %}
+        </datalist>
+      </div>
+
+      <hr>
+
+      <h6 class="mb-3"><i class="bi bi-briefcase me-1"></i> Work or school</h6>
+
+      <div class="mb-3">
+        <label class="form-label" for="workplace">Where you work or study</label>
+        <input type="text" id="workplace" name="workplace" class="form-control" maxlength="100"
+               value="{{ renter.workplace or '' }}" placeholder="e.g. Strathmore University">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="workplace_area_id">Neighbourhood</label>
+        <select id="workplace_area_id" name="workplace_area_id" class="form-select">
+          <option value="">Not set</option>
+          {% for a in areas %}
+            <option value="{{ a.area_id }}" {% if renter.workplace_area_id == a.area_id %}selected{% endif %}>
+              {{ a.name }}{% if a.city != 'Nairobi' %} ({{ a.city }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Used to work out the distance and the travel cost.</div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="commute_mode">How you travel</label>
+        <select id="commute_mode" name="commute_mode" class="form-select">
+          {% for key, mode in commute_modes.items() %}
+            <option value="{{ key }}" {% if renter.commute_mode == key %}selected{% endif %}>{{ mode.label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">{{ commute_modes.get(renter.commute_mode or 'matatu', commute_modes['matatu']).note }}</div>
+      </div>
+
+      <button type="submit" class="btn btn-primary px-4 w-100"><i class="bi bi-check2 me-1"></i> Save and recalculate</button>
+    </form>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-xl-3">
+        {{ stat_card('Your budget', ('KSh ' ~ '{:,.0f}'.format(budget_max)) if budget_max else 'Not set',
+            ('from KSh ' ~ '{:,.0f}'.format(budget_min)) if budget_min else 'Add one on the left', icon='bi-wallet2') }}
+      </div>
+      <div class="col-6 col-xl-3">
+        {{ stat_card('Rent to income', ('%.0f%%'|format(overall.ratio_percent)) if overall.ratio_percent else '-',
+            overall.label if overall.ratio_percent else 'Add your income', icon='bi-percent') }}
+      </div>
+      <div class="col-6 col-xl-3">
+        {{ stat_card('Matching listings', matches|length, 'inside your budget', icon='bi-house-check') }}
+      </div>
+      <div class="col-6 col-xl-3">
+        {{ stat_card('Closest match',
+            ('%.1f km'|format(closest.distance_km)) if closest else '-',
+            ('to ' ~ target.name) if target and closest else 'set your workplace', icon='bi-geo-alt') }}
+      </div>
+    </div>
+
+    {% if target %}
+    <div class="panel p-3 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0"><i class="bi bi-map me-1"></i> Distance to {{ target.name }}</h6>
+        <span class="text-muted small">Straight line, not road distance</span>
+      </div>
+      <div class="map-wrap">
+        <svg id="commuteMap" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <p class="text-muted small mt-2 mb-0">
+        Circle size follows the rent. The star is your workplace or school.
+      </p>
+    </div>
+    {% endif %}
+
+    <div class="panel table-responsive">
+      <div class="p-3 pb-0">
+        <h6 class="mb-1">Listings that fit</h6>
+        <span class="text-muted small">Sorted by rent, with the cost of the trip worked out</span>
+      </div>
+      <table class="table table-hover align-middle mb-0 mt-2">
+        <thead>
+          <tr>
+            <th class="ps-4">Listing</th>
+            <th class="text-end">Rent</th>
+            <th class="text-end">Of income</th>
+            <th class="text-end">Distance</th>
+            <th class="text-end">Trip cost</th>
+            <th class="pe-4 text-end">Price check</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in matches %}
+          <tr>
+            <td class="ps-4">
+              <a class="fw-medium text-decoration-none" href="{{ url_for('listings.detail', listing_id=m.listing.listing_id) }}">{{ m.listing.title }}</a>
+              <span class="text-muted small d-block">
+                {{ m.listing.address }}{% if m.listing.city %}, {{ m.listing.city }}{% endif %}
+                &middot; {{ m.listing.bedrooms if m.listing.bedrooms is not none else '-' }} bed
+              </span>
+            </td>
+            <td class="text-end fw-semibold">{{ "{:,.0f}".format(m.listing.rentamount) }}</td>
+            <td class="text-end">
+              {% if m.rent_to_income and m.rent_to_income.ratio_percent is not none %}
+                <span class="{% if m.rent_to_income.verdict == 'affordable' %}text-success{% elif m.rent_to_income.verdict == 'stretch' %}text-warning{% else %}text-danger{% endif %} fw-semibold">
+                  {{ "%.0f%%"|format(m.rent_to_income.ratio_percent) }}
+                </span>
+              {% else %}<span class="text-muted">-</span>{% endif %}
+            </td>
+            <td class="text-end">
+              {% if m.distance_km is not none %}
+                {{ "%.1f km"|format(m.distance_km) }}
+                {% if m.commute %}<span class="text-muted small d-block">{{ "%.0f min"|format(m.commute.minutes) }}</span>{% endif %}
+              {% else %}<span class="text-muted">-</span>{% endif %}
+            </td>
+            <td class="text-end">
+              {% if m.commute and m.commute.cost is not none %}
+                KSh {{ "{:,.0f}".format(m.commute.cost) }}
+              {% else %}<span class="text-muted">-</span>{% endif %}
+            </td>
+            <td class="pe-4 text-end">
+              {% if m.verdict %}{{ verdict_badge(m.verdict) }}{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6">
+              {{ empty_state('bi-house-x', 'Nothing matches your budget yet.',
+                  'Widen the budget range, clear the preferred area, or save a search alert to be told when something new arrives.') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const points = {{ points | tojson }};
+  const targetPoint = {{ target_point | tojson }};
+
+  if (targetPoint && points.length) {
+    const svg = document.getElementById('commuteMap');
+    const all = points.concat([targetPoint]);
+    const lats = all.map(p => p.latitude);
+    const lons = all.map(p => p.longitude);
+    let minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    let minLon = Math.min(...lons), maxLon = Math.max(...lons);
+    // keep a little padding so the edge points are not cut off
+    const padLat = Math.max((maxLat - minLat) * 0.12, 0.004);
+    const padLon = Math.max((maxLon - minLon) * 0.12, 0.004);
+    minLat -= padLat; maxLat += padLat;
+    minLon -= padLon; maxLon += padLon;
+
+    const x = lon => ((lon - minLon) / (maxLon - minLon)) * 92 + 4;
+    const y = lat => 96 - ((lat - minLat) / (maxLat - minLat)) * 92;
+
+    const rents = points.map(p => p.rent);
+    const minRent = Math.min(...rents), maxRent = Math.max(...rents);
+    const radius = rent => {
+      if (maxRent === minRent) return 2.2;
+      return 1.2 + ((rent - minRent) / (maxRent - minRent)) * 2.8;
+    };
+
+    let markup = '';
+    // faint grid
+    for (let i = 0; i <= 4; i++) {
+      markup += `<line x1="4" y1="${4 + i * 23}" x2="96" y2="${4 + i * 23}" stroke="rgba(31,41,55,0.06)" stroke-width="0.3"/>`;
+      markup += `<line x1="${4 + i * 23}" y1="4" x2="${4 + i * 23}" y2="96" stroke="rgba(31,41,55,0.06)" stroke-width="0.3"/>`;
+    }
+
+    points.forEach(p => {
+      const cx = x(p.longitude).toFixed(2), cy = y(p.latitude).toFixed(2);
+      const r = radius(p.rent).toFixed(2);
+      markup += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(15,118,110,0.35)" stroke="#0f766e" stroke-width="0.35">
+        <title>${p.label.replace(/[<>&]/g, '')} — KSh ${Math.round(p.rent).toLocaleString()}${p.distance_km != null ? ' — ' + p.distance_km.toFixed(1) + ' km away' : ''}</title>
+      </circle>`;
+    });
+
+    markup += `<circle cx="${x(targetPoint.longitude).toFixed(2)}" cy="${y(targetPoint.latitude).toFixed(2)}" r="2.4" fill="#f59e0b" stroke="#b45309" stroke-width="0.4">
+      <title>${targetPoint.label}</title>
+    </circle>`;
+
+    svg.innerHTML = markup;
+  }
+</script>
+{% endblock %}

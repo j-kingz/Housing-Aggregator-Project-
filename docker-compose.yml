@@ -1,0 +1,62 @@
+# The Housing Aggregator, running in containers.
+#
+#   docker compose up --build          start everything
+#   docker compose run --rm scraper    run the scraper once
+#   docker compose logs -f web         watch the site
+#
+# The web container and the scraper container are separate on purpose: a long
+# scrape should never slow the site down (proposal 3.7.4).
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-housing_aggregator_db}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-this-before-you-deploy}
+      FLASK_DEBUG: "0"
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-housing_aggregator_db}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "python init_db.py && python run.py"
+
+  scraper:
+    build: .
+    command: python -m scraper.worker --every 30
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-this-before-you-deploy}
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-housing_aggregator_db}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

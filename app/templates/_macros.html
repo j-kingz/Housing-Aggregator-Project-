@@ -13,3 +13,67 @@
 {% macro location(listing) -%}
   {{ listing.address ~ ', ' if listing.address }}{{ listing.city }}
 {%- endmacro %}
+
+{% macro verdict_badge(verdict) -%}
+  {%- if verdict and verdict.verdict in ('cheap', 'fair', 'expensive') -%}
+    {%- if verdict.verdict == 'cheap' -%}
+      <span class="badge verdict-verdict verdict-cheap" title="{{ '%.0f' % verdict.difference_percent }}% below the area average">
+        <i class="bi bi-arrow-down-circle"></i> {{ verdict.difference_percent | round(0) | int }}% below market
+      </span>
+    {%- elif verdict.verdict == 'expensive' -%}
+      <span class="badge verdict-verdict verdict-expensive" title="{{ '%.0f' % verdict.difference_percent }}% above the area average">
+        <i class="bi bi-arrow-up-circle"></i> {{ verdict.difference_percent | round(0) | int }}% above market
+      </span>
+    {%- else -%}
+      <span class="badge verdict-verdict verdict-fair" title="Close to the area average">
+        <i class="bi bi-check-circle"></i> Fair price
+      </span>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro stat_card(label, value, sub='', icon='bi-graph-up') -%}
+<div class="panel p-3 d-flex align-items-center gap-3 h-100">
+  <span class="icon-box icon-box-sm"><i class="bi {{ icon }}"></i></span>
+  <div class="flex-grow-1">
+    <div class="text-muted small">{{ label }}</div>
+    <div class="fs-4 fw-semibold">{{ value }}</div>
+    {% if sub %}<div class="text-muted small">{{ sub }}</div>{% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro page_controls(pager, endpoint, params={}) -%}
+{% if pager and pager.pages > 1 %}
+<nav aria-label="Listing pages" class="mt-4">
+  <ul class="pagination pagination-sm justify-content-center mb-0">
+    <li class="page-item {% if not pager.has_prev %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for(endpoint, page=pager.prev_num, **params) }}">Previous</a>
+    </li>
+    {% for p in pager.iter_pages() %}
+      {% if p %}
+        <li class="page-item {% if p == pager.page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for(endpoint, page=p, **params) }}">{{ p }}</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {% if not pager.has_next %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for(endpoint, page=pager.next_num, **params) }}">Next</a>
+    </li>
+  </ul>
+  <p class="text-center text-muted small mt-2 mb-0">
+    Page {{ pager.page }} of {{ pager.pages }} &middot; {{ pager.total }} listings
+  </p>
+</nav>
+{% endif %}
+{%- endmacro %}
+
+{% macro empty_state(icon, message, hint='') -%}
+<div class="panel empty-state">
+  <i class="bi {{ icon }} d-block mb-2"></i>
+  <p class="mb-1">{{ message }}</p>
+  {% if hint %}<p class="small mb-0">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}

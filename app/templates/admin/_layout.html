@@ -19,6 +19,12 @@
   <li class="nav-item">
     <a class="nav-link {{ 'active' if page == 'admin.listings' }}" href="{{ url_for('admin.listings') }}"><i class="bi bi-buildings me-1"></i>Listings</a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if page == 'admin.sources' }}" href="{{ url_for('admin.sources') }}"><i class="bi bi-globe me-1"></i>Sources</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if page == 'admin.runs' }}" href="{{ url_for('admin.runs') }}"><i class="bi bi-journal-text me-1"></i>Runs</a>
+  </li>
 </ul>
 
 {% block admin_content %}{% endblock %}

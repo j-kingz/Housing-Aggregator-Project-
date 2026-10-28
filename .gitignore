@@ -4,6 +4,8 @@ __pycache__/
 .env
 instance/
 *.log
+.pytest_cache/
+.vscode/
 
 # proposal and diagrams stay local only
 *.docx

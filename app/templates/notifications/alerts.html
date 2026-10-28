@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_state %}
+{% block title %}Search alerts{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <div>
+    <h2 class="mb-0">Search alerts</h2>
+    <span class="text-muted small">Saved searches. You are told when a matching listing is added.</span>
+  </div>
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('notifications.inbox') }}">
+    <i class="bi bi-bell me-1"></i> Notifications
+  </a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <form method="post" class="panel p-4">
+      <h5 class="mb-3"><i class="bi bi-plus-circle me-1"></i> New alert</h5>
+
+      <div class="mb-3">
+        <label class="form-label" for="area">Area</label>
+        <input type="text" id="area" name="area" class="form-control" maxlength="100"
+               list="area-options" placeholder="e.g. Westlands">
+        <datalist id="area-options">
+          {% for a in areas %}<option value="{{ a.name }}">{{ a.city }}</option>{% endfor %}
+        </datalist>
+        <div class="form-text">Leave it empty to match every area.</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="maxprice">Maximum rent (KSh)</label>
+        <input type="number" id="maxprice" name="maxprice" class="form-control" min="0" step="any"
+               placeholder="e.g. 45000">
+      </div>
+
+      <div class="row">
+        <div class="col-6 mb-3">
+          <label class="form-label" for="minbedrooms">Min bedrooms</label>
+          <input type="number" id="minbedrooms" name="minbedrooms" class="form-control" min="0" max="50">
+        </div>
+        <div class="col-6 mb-3">
+          <label class="form-label" for="minbathrooms">Min bathrooms</label>
+          <input type="number" id="minbathrooms" name="minbathrooms" class="form-control" min="0" max="50">
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="frequency">How often</label>
+        <select id="frequency" name="frequency" class="form-select">
+          <option value="instant">As soon as it is added</option>
+          <option value="daily">Once a day</option>
+          <option value="weekly">Once a week</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100"><i class="bi bi-bell me-1"></i> Save alert</button>
+    </form>
+  </div>
+
+  <div class="col-lg-8">
+    {% if alerts %}
+    <div class="panel">
+      <ul class="list-group list-group-flush">
+        {% for alert in alerts %}
+        <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div>
+            <div class="fw-medium">
+              {% if alert.area %}<i class="bi bi-geo-alt me-1"></i>{{ alert.area }}{% endif %}
+              {% if alert.maxprice %} &middot; up to KSh {{ "{:,.0f}".format(alert.maxprice) }}{% endif %}
+              {% if alert.minbedrooms %} &middot; {{ alert.minbedrooms }}+ bed{% endif %}
+              {% if alert.minbathrooms %} &middot; {{ alert.minbathrooms }}+ bath{% endif %}
+            </div>
+            <div class="text-muted small">
+              {{ alert.match_count }} listing{{ '' if alert.match_count == 1 else 's' }} match right now
+              &middot; saved {{ alert.datecreated.strftime('%d %b %Y') if alert.datecreated else '' }}
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge rounded-pill {% if alert.isactive %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+              {{ 'active' if alert.isactive else 'paused' }}
+            </span>
+            <form method="post" action="{{ url_for('notifications.toggle_alert', alert_id=alert.searchalert_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-primary">{{ 'Pause' if alert.isactive else 'Resume' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('notifications.delete_alert', alert_id=alert.searchalert_id) }}"
+                  onsubmit="return confirm('Delete this alert?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+            </form>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% else %}
+      {{ empty_state('bi-bell', 'You have no saved searches yet.',
+          'Use the form to save one, or save a search straight from the search results page.') }}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
