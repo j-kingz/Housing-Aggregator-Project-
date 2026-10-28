@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stat_card, empty_state %}
+{% block title %}Price analytics{% endblock %}
+
+{% block hero %}
+<section class="hero hero-compact">
+  <div class="container">
+    <h1 class="mb-2">Price analytics</h1>
+    <p class="mb-0">What the rental market actually charges, neighbourhood by neighbourhood.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <h2 class="mb-1">Market overview</h2>
+    <span class="text-muted small">Calculated live from {{ stats.count }} active listings</span>
+  </div>
+  <form method="get" class="d-flex gap-2">
+    <select name="city" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">All cities</option>
+      {% for c in cities %}
+        <option value="{{ c }}" {% if city == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn btn-sm btn-primary">Filter</button></noscript>
+  </form>
+</div>
+
+{% if not stats.count %}
+  {{ empty_state('bi-bar-chart', 'There is no market data yet.',
+      'Load the sample listings with "python -m scraper.cli import-fixture" or point the scraper at a live site.') }}
+{% else %}
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">{{ stat_card('Listings tracked', stats.count, sub=stats.count ~ ' active', icon='bi-buildings') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Average rent', 'KSh ' ~ '{:,.0f}'.format(stats.average), sub='per month', icon='bi-cash-coin') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Median rent', 'KSh ' ~ '{:,.0f}'.format(stats.median), sub='the middle price', icon='bi-graph-up-arrow') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Neighbourhoods', areas_covered, sub='covered by listings', icon='bi-geo-alt') }}</div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <div class="panel p-3 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">How rents are spread</h6>
+        <span class="text-muted small">Each bar is a price band</span>
+      </div>
+      <canvas id="distributionChart" height="260"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="panel p-3 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">Price trend</h6>
+        <span class="text-muted small">By month listed</span>
+      </div>
+      {% if trend|length > 1 %}
+        <canvas id="trendChart" height="260"></canvas>
+      {% else %}
+        <p class="text-muted small mb-0">
+          The trend chart needs listings with different dates. There is only one month of data so far.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="panel p-3 h-100">
+      <h6 class="mb-3"><i class="bi bi-piggy-bank text-success me-1"></i> Cheapest neighbourhoods</h6>
+      {% if cheapest %}
+        <ul class="list-group list-group-flush">
+          {% for row in cheapest %}
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <a class="text-decoration-none fw-medium" href="{{ url_for('analytics.area', area_name=row.area, city=row.city) }}">{{ row.area }}</a>
+              <span class="text-nowrap fw-semibold">KSh {{ "{:,.0f}".format(row.average) }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted small mb-0">Not enough listings in one area to compare prices yet.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel p-3 h-100">
+      <h6 class="mb-3"><i class="bi bi-graph-up text-danger me-1"></i> Most expensive neighbourhoods</h6>
+      {% if dearest %}
+        <ul class="list-group list-group-flush">
+          {% for row in dearest %}
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <a class="text-decoration-none fw-medium" href="{{ url_for('analytics.area', area_name=row.area, city=row.city) }}">{{ row.area }}</a>
+              <span class="text-nowrap fw-semibold">KSh {{ "{:,.0f}".format(row.average) }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted small mb-0">Not enough listings in one area to compare prices yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if city_rows|length > 1 %}
+<div class="panel p-3 mb-4">
+  <h6 class="mb-3"><i class="bi bi-buildings me-1"></i> Average rent by city</h6>
+  <canvas id="cityChart" height="220"></canvas>
+</div>
+{% endif %}
+
+{% if per_sqft.count %}
+<div class="panel p-3 mb-4">
+  <h6 class="mb-3"><i class="bi bi-bounding-box me-1"></i> Rent per square foot</h6>
+  <p class="text-muted small mb-0">
+    Across {{ per_sqft.count }} listings that publish a size, the average is
+    KSh {{ "{:,.0f}".format(per_sqft.average) }} per square foot
+    (median KSh {{ "{:,.0f}".format(per_sqft.median) }}).
+  </p>
+</div>
+{% endif %}
+
+<div class="panel table-responsive">
+  <div class="p-3 pb-0">
+    <h6 class="mb-1">Neighbourhood price benchmarks</h6>
+    <span class="text-muted small">The table every rent is compared against</span>
+  </div>
+  <table class="table table-hover align-middle mb-0 mt-2">
+    <thead>
+      <tr>
+        <th class="ps-4">Neighbourhood</th>
+        <th class="text-center">Listings</th>
+        <th class="text-end">Average</th>
+        <th class="text-end">Median</th>
+        <th class="text-end">Lowest</th>
+        <th class="text-end">Highest</th>
+        <th class="pe-4 text-end">Range</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in benchmarks %}
+      <tr>
+        <td class="ps-4">
+          <a class="fw-medium text-decoration-none" href="{{ url_for('analytics.area', area_name=row.area, city=row.city) }}">{{ row.area }}</a>
+          <span class="text-muted small d-block">{{ row.city }}</span>
+        </td>
+        <td class="text-center">{{ row.count }}</td>
+        <td class="text-end fw-semibold">{{ "{:,.0f}".format(row.average) }}</td>
+        <td class="text-end">{{ "{:,.0f}".format(row.median) }}</td>
+        <td class="text-end text-muted">{{ "{:,.0f}".format(row.min) }}</td>
+        <td class="text-end text-muted">{{ "{:,.0f}".format(row.max) }}</td>
+        <td class="pe-4 text-end text-muted">{{ "{:,.0f}".format(row.spread) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-center text-muted py-4">No listings to benchmark yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if snapshots %}
+<div class="panel p-3 mt-4">
+  <h6 class="mb-2"><i class="bi bi-clock-history me-1"></i> Recorded market snapshots</h6>
+  <p class="text-muted small mb-2">The market figures logged on each run, kept so trends can be compared over time.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Date</th><th>City</th><th class="text-end">Listings</th>
+          <th class="text-end">Average</th><th class="text-end">Median</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in snapshots %}
+        <tr>
+          <td>{{ s.snapshot_date.strftime('%d %b %Y') }}</td>
+          <td>{{ s.city or 'All' }}</td>
+          <td class="text-end">{{ s.listing_count }}</td>
+          <td class="text-end">{{ "{:,.0f}".format(s.average_rent or 0) }}</td>
+          <td class="text-end">{{ "{:,.0f}".format(s.median_rent or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const brand = '#0f766e';
+  const accent = '#f59e0b';
+  const grid = 'rgba(31, 41, 55, 0.08)';
+
+  const distributionData = {{ distribution | tojson }};
+  new Chart(document.getElementById('distributionChart'), {
+    type: 'bar',
+    data: {
+      labels: distributionData.map(d => d.label),
+      datasets: [{
+        label: 'Listings',
+        data: distributionData.map(d => d.count),
+        backgroundColor: brand,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {display: false},
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const band = distributionData[ctx.dataIndex];
+              return ` ${ctx.parsed.y} listings, KSh ${Math.round(band.from).toLocaleString()} - ${Math.round(band.to).toLocaleString()}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {grid: {display: false}, ticks: {maxRotation: 60, minRotation: 0, font: {size: 10}}},
+        y: {beginAtZero: true, grid: {color: grid}, ticks: {precision: 0}}
+      }
+    }
+  });
+
+  const trendData = {{ trend | tojson }};
+  if (trendData.length > 1) {
+    new Chart(document.getElementById('trendChart'), {
+      type: 'line',
+      data: {
+        labels: trendData.map(t => t.label),
+        datasets: [{
+          label: 'Average rent',
+          data: trendData.map(t => Math.round(t.average)),
+          borderColor: accent,
+          backgroundColor: 'rgba(245, 158, 11, 0.15)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {label: (ctx) => ' KSh ' + ctx.parsed.y.toLocaleString()}}
+        },
+        scales: {
+          x: {grid: {display: false}},
+          y: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}}
+        }
+      }
+    });
+  }
+
+  const cityData = {{ city_rows | tojson }};
+  if (document.getElementById('cityChart') && cityData.length) {
+    new Chart(document.getElementById('cityChart'), {
+      type: 'bar',
+      data: {
+        labels: cityData.map(c => c.city),
+        datasets: [{
+          label: 'Average rent',
+          data: cityData.map(c => Math.round(c.average)),
+          backgroundColor: brand,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: {legend: {display: false}},
+        scales: {
+          x: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}},
+          y: {grid: {display: false}}
+        }
+      }
+    });
+  }
+</script>
+{% endif %}
+{% endblock %}
