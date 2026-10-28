@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 680px;">
+  <div class="panel p-4 mb-4 d-flex align-items-center gap-3">
+    <span class="avatar avatar-lg">{{ user.firstname[:1]|upper }}{{ user.lastname[:1]|upper }}</span>
+    <div>
+      <h4 class="mb-0">{{ user.full_name }}</h4>
+      <div class="text-muted small"><i class="bi bi-envelope me-1"></i>{{ user.email }}</div>
+      <span class="badge rounded-pill text-bg-light border mt-1">{{ user.role.name }}</span>
+    </div>
+  </div>
+
+  <form method="post" class="panel p-4">
+    <h5 class="mb-3">Edit details</h5>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="firstname">First name</label>
+        <input type="text" id="firstname" name="firstname" class="form-control" maxlength="50"
+               value="{{ user.firstname }}" required>
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="lastname">Last name</label>
+        <input type="text" id="lastname" name="lastname" class="form-control" maxlength="50"
+               value="{{ user.lastname }}" required>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="phonenumber">Phone number</label>
+      <input type="tel" id="phonenumber" name="phonenumber" class="form-control" maxlength="20"
+             value="{{ user.phonenumber or '' }}">
+    </div>
+
+    {% if user.renter %}
+    <h6 class="text-uppercase small text-muted fw-semibold">Budget details</h6>
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="preferredlocation">Preferred area</label>
+        <input type="text" id="preferredlocation" name="preferredlocation" class="form-control" maxlength="100"
+               list="area-options" placeholder="e.g. Westlands" value="{{ user.renter.preferredlocation or '' }}">
+        <datalist id="area-options">
+          {% for a in areas %}<option value="{{ a.name }}">{{ a.city }}</option>{% endfor %}
+        </datalist>
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="budgetrange">Budget range (KSh)</label>
+        <input type="text" id="budgetrange" name="budgetrange" class="form-control" maxlength="50"
+               placeholder="e.g. 20,000 - 30,000" value="{{ user.renter.budgetrange or '' }}">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="monthlyincome">Monthly income (KSh)</label>
+        <input type="number" id="monthlyincome" name="monthlyincome" class="form-control" min="0" step="any"
+               placeholder="e.g. 80000" value="{{ user.renter.monthlyincome or '' }}">
+        <div class="form-text">Used for the rent to income comparison.</div>
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="commute_mode">How you travel</label>
+        <select id="commute_mode" name="commute_mode" class="form-select">
+          <option value="matatu" {% if user.renter.commute_mode == 'matatu' %}selected{% endif %}>Matatu</option>
+          <option value="bus" {% if user.renter.commute_mode == 'bus' %}selected{% endif %}>Bus</option>
+          <option value="car" {% if user.renter.commute_mode == 'car' %}selected{% endif %}>Car</option>
+          <option value="boda" {% if user.renter.commute_mode == 'boda' %}selected{% endif %}>Boda (motorbike taxi)</option>
+          <option value="walk" {% if user.renter.commute_mode == 'walk' %}selected{% endif %}>Walking</option>
+        </select>
+      </div>
+    </div>
+
+    <h6 class="text-uppercase small text-muted fw-semibold">Work or school</h6>
+    <div class="row">
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="workplace">Where you work or study</label>
+        <input type="text" id="workplace" name="workplace" class="form-control" maxlength="100"
+               placeholder="e.g. Strathmore University" value="{{ user.renter.workplace or '' }}">
+      </div>
+      <div class="col-sm-6 mb-3">
+        <label class="form-label" for="workplace_area_id">Neighbourhood</label>
+        <select id="workplace_area_id" name="workplace_area_id" class="form-select">
+          <option value="">Not set</option>
+          {% for a in areas %}
+            <option value="{{ a.area_id }}" {% if user.renter.workplace_area_id == a.area_id %}selected{% endif %}>
+              {{ a.name }}{% if a.city != 'Nairobi' %} ({{ a.city }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Used for the distance and commute estimates.</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if user.landlord %}
+    <div class="mb-3">
+      <label class="form-label" for="businessname">Business name</label>
+      <input type="text" id="businessname" name="businessname" class="form-control" maxlength="100"
+             value="{{ user.landlord.businessname or '' }}">
+      <div class="form-text">Verification status: {{ user.landlord.verificationstatus }}</div>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary px-4 mt-2"><i class="bi bi-check2 me-1"></i> Save</button>
+  </form>
+</div>
+{% endblock %}
