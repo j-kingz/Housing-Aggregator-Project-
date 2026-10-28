@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import verdict_badge %}
+{% block title %}Insight: {{ listing.title }}{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="small text-decoration-none">
+  <i class="bi bi-arrow-left"></i> Back to the listing
+</a>
+
+<div class="mx-auto mt-3" style="max-width: 760px;">
+  <div class="panel p-4 mb-3">
+    <h2 class="mb-1">{{ listing.title }}</h2>
+    <p class="text-muted mb-3">
+      {{ listing.address }}{% if listing.city %}, {{ listing.city }}{% endif %}
+      &middot; KSh {{ "{:,.0f}".format(listing.rentamount) }} per month
+    </p>
+    {{ verdict_badge(verdict) }}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-4">
+      <div class="panel p-3 h-100">
+        <div class="text-muted small">Rent as a share of your income</div>
+        <div class="fs-3 fw-semibold {% if insight.rent_to_income and insight.rent_to_income.verdict == 'affordable' %}text-success{% elif insight.rent_to_income and insight.rent_to_income.verdict == 'stretch' %}text-warning{% else %}text-danger{% endif %}">
+          {% if insight.rent_to_income and insight.rent_to_income.ratio_percent is not none %}
+            {{ "%.0f%%"|format(insight.rent_to_income.ratio_percent) }}
+          {% else %}
+            -
+          {% endif %}
+        </div>
+        <div class="text-muted small">
+          {% if insight.rent_to_income %}{{ insight.rent_to_income.label }}{% else %}Add your income to see this{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="panel p-3 h-100">
+        <div class="text-muted small">Distance to your workplace</div>
+        <div class="fs-3 fw-semibold">
+          {% if insight.distance_km is not none %}{{ "%.1f km"|format(insight.distance_km) }}{% else %}-{% endif %}
+        </div>
+        <div class="text-muted small">
+          {% if insight.workplace %}{{ insight.workplace }}{% else %}Set your workplace in your profile{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="panel p-3 h-100">
+        <div class="text-muted small">Trip cost each way</div>
+        <div class="fs-3 fw-semibold">
+          {% if insight.commute and insight.commute.cost is not none %}
+            KSh {{ "{:,.0f}".format(insight.commute.cost) }}
+          {% else %}-{% endif %}
+        </div>
+        <div class="text-muted small">
+          {% if insight.commute %}
+            About {{ "%.0f minutes"|format(insight.commute.minutes) }} by {{ insight.commute.label|lower }}
+          {% else %}Add your workplace to see this{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if insight.commute %}
+  <div class="panel p-3 mt-3">
+    <h6 class="mb-2"><i class="bi bi-signpost-2 me-1"></i> How the trip is worked out</h6>
+    <p class="text-muted small mb-0">
+      The distance is the straight line from the listing to {{ insight.workplace }}. Real routes are
+      about 30 percent longer, and that is the figure used for the time and cost above.
+      Travelling by {{ insight.commute.label|lower }}: {{ insight.commute.note }}.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="mt-3">
+    <a class="btn btn-outline-primary" href="{{ url_for('insights.budget') }}">
+      <i class="bi bi-sliders me-1"></i> Update your budget profile
+    </a>
+  </div>
+</div>
+{% endblock %}
