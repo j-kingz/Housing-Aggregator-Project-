@@ -51,4 +51,8 @@ def create_app(config_class=Config):
             count = unread_count(renter.renter_id)
         return {"unread_notifications": count}
 
+    @app.context_processor
+    def inject_map_config():
+        return {"google_maps_api_key": app.config.get("GOOGLE_MAPS_API_KEY", "")}
+
     return app
