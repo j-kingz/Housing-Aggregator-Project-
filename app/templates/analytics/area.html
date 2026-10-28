@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% from "_macros.html" import stat_card %}
+{% block title %}{{ area.name if area else area_name }} price analysis{% endblock %}
+
+{% block hero %}
+<section class="hero hero-compact">
+  <div class="container">
+    <h1 class="mb-2">{{ area.name if area else area_name }}</h1>
+    <p class="mb-0">
+      {% if area and area.description %}{{ area.description }}{% else %}Price analysis for this neighbourhood{% endif %}
+      {% if city %} &middot; {{ city }}{% endif %}
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <a href="{{ url_for('analytics.dashboard', city=city) }}" class="small text-decoration-none">
+    <i class="bi bi-arrow-left"></i> Back to the dashboard
+  </a>
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('main.home', area=area.name if area else area_name, city=city) }}">
+    <i class="bi bi-search me-1"></i> See the listings
+  </a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">{{ stat_card('Listings here', stats.count, icon='bi-buildings') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Average rent', 'KSh ' ~ '{:,.0f}'.format(stats.average), icon='bi-cash-coin') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Median rent', 'KSh ' ~ '{:,.0f}'.format(stats.median), icon='bi-graph-up-arrow') }}</div>
+  <div class="col-6 col-lg-3">{{ stat_card('Price range', 'KSh ' ~ '{:,.0f}'.format(stats.min) ~ ' - ' ~ '{:,.0f}'.format(stats.max), icon='bi-arrows-angle-expand') }}</div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <div class="panel p-3 h-100">
+      <h6 class="mb-2">How rents are spread in {{ area.name if area else area_name }}</h6>
+      <canvas id="areaChart" height="240"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="panel p-3 h-100">
+      <h6 class="mb-2">Average by number of bedrooms</h6>
+      <canvas id="bedChart" height="240"></canvas>
+    </div>
+  </div>
+</div>
+
+{% if trend|length > 1 %}
+<div class="panel p-3 mb-4">
+  <h6 class="mb-2">Price trend over time</h6>
+  <canvas id="areaTrend" height="200"></canvas>
+</div>
+{% endif %}
+
+<div class="panel table-responsive">
+  <div class="p-3 pb-0">
+    <h6 class="mb-1">Listings in this neighbourhood</h6>
+    <span class="text-muted small">{{ listings|length }} listings, cheapest first</span>
+  </div>
+  <table class="table table-hover align-middle mb-0 mt-2">
+    <thead>
+      <tr>
+        <th class="ps-4">Title</th>
+        <th class="text-center">Beds</th>
+        <th class="text-center">Baths</th>
+        <th class="text-end">Rent</th>
+        <th class="text-end">vs average</th>
+        <th class="pe-4">Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in listings %}
+      <tr>
+        <td class="ps-4">
+          <a class="fw-medium text-decoration-none" href="{{ url_for('listings.detail', listing_id=l.listing_id) }}">{{ l.title }}</a>
+          {% if l.amenities %}<span class="text-muted small d-block">{{ l.amenities }}</span>{% endif %}
+        </td>
+        <td class="text-center">{{ l.bedrooms if l.bedrooms is not none else '-' }}</td>
+        <td class="text-center">{{ l.bathrooms if l.bathrooms is not none else '-' }}</td>
+        <td class="text-end fw-semibold">{{ "{:,.0f}".format(l.rentamount) }}</td>
+        <td class="text-end">
+          {% set difference = ((l.rentamount|float - stats.average) / stats.average * 100) if stats.average else 0 %}
+          {% if difference <= -10 %}
+            <span class="text-success fw-semibold">{{ "%+.0f"|format(difference) }}%</span>
+          {% elif difference >= 10 %}
+            <span class="text-danger fw-semibold">{{ "%+.0f"|format(difference) }}%</span>
+          {% else %}
+            <span class="text-muted">{{ "%+.0f"|format(difference) }}%</span>
+          {% endif %}
+        </td>
+        <td class="pe-4 small text-muted">{{ l.source_name or 'Landlord' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const brand = '#0f766e';
+  const accent = '#f59e0b';
+  const grid = 'rgba(31, 41, 55, 0.08)';
+
+  const dist = {{ distribution | tojson }};
+  new Chart(document.getElementById('areaChart'), {
+    type: 'bar',
+    data: {
+      labels: dist.map(d => d.label),
+      datasets: [{label: 'Listings', data: dist.map(d => d.count), backgroundColor: brand, borderRadius: 6}]
+    },
+    options: {
+      responsive: true,
+      plugins: {legend: {display: false}},
+      scales: {
+        x: {grid: {display: false}, ticks: {font: {size: 10}}},
+        y: {beginAtZero: true, grid: {color: grid}, ticks: {precision: 0}}
+      }
+    }
+  });
+
+  const beds = {{ bedroom_rows | tojson }};
+  new Chart(document.getElementById('bedChart'), {
+    type: 'bar',
+    data: {
+      labels: beds.map(b => (b.bedrooms === 0 ? 'Studio / bedsitter' : b.bedrooms + ' bedroom')),
+      datasets: [{label: 'Average rent', data: beds.map(b => Math.round(b.average)), backgroundColor: accent, borderRadius: 6}]
+    },
+    options: {
+      responsive: true,
+      plugins: {legend: {display: false}},
+      scales: {
+        x: {grid: {display: false}},
+        y: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}}
+      }
+    }
+  });
+
+  const trend = {{ trend | tojson }};
+  if (trend.length > 1) {
+    new Chart(document.getElementById('areaTrend'), {
+      type: 'line',
+      data: {
+        labels: trend.map(t => t.label),
+        datasets: [{
+          label: 'Average rent',
+          data: trend.map(t => Math.round(t.average)),
+          borderColor: brand,
+          backgroundColor: 'rgba(15, 118, 110, 0.12)',
+          fill: true, tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {legend: {display: false}},
+        scales: {
+          x: {grid: {display: false}},
+          y: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}}
+        }
+      }
+    });
+  }
+</script>
+{% endblock %}
