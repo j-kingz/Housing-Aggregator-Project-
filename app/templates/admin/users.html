@@ -1,0 +1,91 @@
+{% extends "admin/_layout.html" %}
+{% block title %}Users | Admin{% endblock %}
+{% block admin_content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-6">
+    <input type="text" name="q" class="form-control" placeholder="Search by name or email" value="{{ q }}">
+  </div>
+  <div class="col-md-3">
+    <select name="role" class="form-select">
+      <option value="">All roles</option>
+      {% for r in roles %}
+        <option value="{{ r }}" {% if role == r %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3 d-grid">
+    <button class="btn btn-primary"><i class="bi bi-funnel me-1"></i> Filter</button>
+  </div>
+</form>
+
+<div class="panel table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr>
+        <th class="ps-4">Name</th>
+        <th>Email</th>
+        <th>Phone</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th class="pe-4 text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="ps-4">
+          <div class="d-flex align-items-center gap-2">
+            <span class="avatar">{{ u.firstname[:1]|upper }}{{ u.lastname[:1]|upper }}</span>
+            <span class="fw-medium">{{ u.full_name }}</span>
+          </div>
+        </td>
+        <td class="text-muted">{{ u.email }}</td>
+        <td class="text-muted">{{ u.phonenumber or '-' }}</td>
+        <td>
+          {{ u.role.name }}
+          {% if u.landlord %}
+            {% if u.landlord.verificationstatus == 'verified' %}
+              <span class="badge text-bg-success ms-1"><i class="bi bi-patch-check"></i> verified</span>
+            {% else %}
+              <span class="badge text-bg-warning ms-1">pending</span>
+            {% endif %}
+          {% endif %}
+        </td>
+        <td>
+          {% if u.status == 'active' %}
+            <span class="badge rounded-pill text-bg-success">active</span>
+          {% else %}
+            <span class="badge rounded-pill text-bg-secondary">{{ u.status }}</span>
+          {% endif %}
+        </td>
+        <td class="pe-4 text-end text-nowrap">
+          {% if u.landlord %}
+            <form method="post" action="{{ url_for('admin.verify_landlord', user_id=u.user_id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-primary">
+                {{ 'Unverify' if u.landlord.verificationstatus == 'verified' else 'Verify' }}
+              </button>
+            </form>
+          {% endif %}
+          {% if u.user_id != current_user.user_id %}
+            <form method="post" action="{{ url_for('admin.toggle_user', user_id=u.user_id) }}" class="d-inline"
+                  onsubmit="return confirm('{{ 'Deactivate' if u.status == 'active' else 'Reactivate' }} this account?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% if u.status == 'active' %}
+                <button class="btn btn-sm btn-outline-danger">Deactivate</button>
+              {% else %}
+                <button class="btn btn-sm btn-outline-success">Reactivate</button>
+              {% endif %}
+            </form>
+          {% else %}
+            <span class="text-muted small">you</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-center text-muted py-4">No users match that search.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
