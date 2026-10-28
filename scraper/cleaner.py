@@ -424,6 +424,10 @@ def clean_listing(raw, known_areas=None, default_city=None):
         "bedrooms": bedrooms,
         "bathrooms": bathrooms,
         "category": raw.get("category") or infer_category(title, bedrooms, body),
+        "building_name": (raw.get("building_name") or "").strip()[:150] or None,
+        "floor_number": _parse_floor(raw.get("floor_number")),
+        "room_number": (raw.get("room_number") or "").strip()[:30] or None,
+        "availability_status": raw.get("availability_status", "unknown") or "unknown",
         "city": (city or "").strip()[:50] or None,
         "address": (address or "").strip()[:150] or None,
         "area_name": area_name,
@@ -439,3 +443,13 @@ def clean_listing(raw, known_areas=None, default_city=None):
 
     cleaned["fingerprint"] = fingerprint(cleaned)
     return cleaned
+
+
+def _parse_floor(value):
+    if value is None or value == "":
+        return None
+    match = re.search(r"-?\d+", str(value))
+    if not match:
+        return None
+    number = int(match.group(0))
+    return number if -5 <= number <= 200 else None
