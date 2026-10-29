@@ -15,11 +15,14 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
       MYSQL_DATABASE: ${DB_NAME:-housing_aggregator_db}
     ports:
-      - "3306:3306"
+      # 3307 on your computer, so it does not clash with a MySQL already using 3306
+      - "3307:3306"
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # -h 127.0.0.1 forces a TCP check. MySQL first runs a temporary start-up
+      # server that only listens on a socket, which must not count as "healthy".
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -30,6 +33,14 @@ services:
     environment:
       SECRET_KEY: ${SECRET_KEY:-change-this-before-you-deploy}
       FLASK_DEBUG: "0"
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      MPESA_ENV: ${MPESA_ENV:-sandbox}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE:-174379}
+      MPESA_PASSKEY: ${MPESA_PASSKEY:-}
+      MPESA_CALLBACK_BASE_URL: ${MPESA_CALLBACK_BASE_URL:-}
+      MPESA_RESERVATION_PERCENT: ${MPESA_RESERVATION_PERCENT:-10}
       DB_HOST: db
       DB_PORT: "3306"
       DB_NAME: ${DB_NAME:-housing_aggregator_db}
@@ -42,6 +53,13 @@ services:
         condition: service_healthy
     command: >
       sh -c "python init_db.py && python run.py"
+    healthcheck:
+      # healthy once the tables exist and the site answers
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
   scraper:
     build: .
@@ -56,6 +74,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
     depends_on:
       db:
+        condition: service_healthy
+      web:
         condition: service_healthy
 
 volumes:
