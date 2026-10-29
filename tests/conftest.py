@@ -26,6 +26,14 @@ class TestConfig(Config):
     SECRET_KEY = "test-secret-key-for-the-test-suite"
 
 
+@pytest.fixture(autouse=True)
+def no_internet_place_lookup(monkeypatch):
+    """The tests never call the OpenStreetMap place service."""
+    from app.places import services
+
+    monkeypatch.setattr(services, "external_places", lambda query, limit=5: [])
+
+
 @pytest.fixture
 def app():
     """A fresh application with an empty database."""

@@ -10,11 +10,14 @@
  *   data-google          also show Google Maps place suggestions (needs the key)
  *   data-lat / data-lng  selectors of hidden inputs to fill with the GPS point
  *   data-area-id         selector of a hidden input to fill with the area id
+ *   data-county-field    selector of a hidden input to fill when a county is picked
+ *   data-county-from     selector of a text box whose picked county limits these suggestions
  */
 (function () {
   'use strict';
 
-  const ICONS = {area: 'bi-geo-alt', building: 'bi-building', google: 'bi-pin-map'};
+  const ICONS = {county: 'bi-map', area: 'bi-geo-alt', building: 'bi-building', place: 'bi-pin-map', google: 'bi-pin-map'};
+  const GROUPS = {county: 'Counties', area: 'Neighbourhoods', building: 'Buildings', place: 'Places in Kenya', google: 'Places in Kenya'};
 
   function debounce(fn, ms) {
     let t;
@@ -38,6 +41,8 @@
       this.latField = input.dataset.lat ? document.querySelector(input.dataset.lat) : null;
       this.lngField = input.dataset.lng ? document.querySelector(input.dataset.lng) : null;
       this.idField = input.dataset.areaId ? document.querySelector(input.dataset.areaId) : null;
+      this.countyField = input.dataset.countyField ? document.querySelector(input.dataset.countyField) : null;
+      this.countyFrom = input.dataset.countyFrom ? document.querySelector(input.dataset.countyFrom) : null;
       this.items = [];
       this.active = -1;
       this.chosen = input.value.trim() !== '';   // a value that came from the server is already valid
@@ -104,8 +109,11 @@
 
     async fetchLocal(q) {
       try {
-        const r = await fetch(`/api/suggest?kind=${encodeURIComponent(this.kind)}&q=${encodeURIComponent(q)}`,
-                              {headers: {'Accept': 'application/json'}});
+        let url = `/api/suggest?kind=${encodeURIComponent(this.kind)}&q=${encodeURIComponent(q)}`;
+        const county = this.countyFrom && this.countyFrom.dataset.county;
+        if (county) url += `&county=${encodeURIComponent(county)}`;
+        if (this.useGoogle && googleReady()) url += '&ext=0';
+        const r = await fetch(url, {headers: {'Accept': 'application/json'}});
         const d = await r.json();
         return d.items || [];
       } catch (e) { return []; }
@@ -132,6 +140,8 @@
       const q = this.input.value.trim();
       this.chosen = false;
       if (this.kind === 'place') this.setPoint(null, null, null);
+      this.input.dataset.county = '';
+      if (this.countyField) this.countyField.value = '';
       const mine = ++this.token;
       const [local, google] = await Promise.all([this.fetchLocal(q), this.fetchGoogle(q)]);
       if (mine !== this.token) return;           // a newer keystroke is already being handled
@@ -150,12 +160,25 @@
         this.menu.hidden = !q;
         return;
       }
-      this.menu.innerHTML = this.items.map((it, i) => `
+      let lastGroup = '';
+      let html = '';
+      this.items.forEach((it, i) => {
+        const group = GROUPS[it.type] || '';
+        if (group && group !== lastGroup) {
+          html += `<div class="ta-group">${group}</div>`;
+          lastGroup = group;
+        }
+        html += `
         <button type="button" class="list-group-item list-group-item-action ta-item ${i === this.active ? 'active' : ''}" data-index="${i}">
           <i class="bi ${ICONS[it.type] || ICONS.area} me-2"></i>
           <span class="fw-medium">${this.escape(it.label)}</span>
           <span class="small ta-detail">${this.escape(it.detail || '')}</span>
-        </button>`).join('');
+        </button>`;
+      });
+      if (this.items.some(it => it.type === 'place')) {
+        html += '<div class="ta-credit">Places from OpenStreetMap contributors</div>';
+      }
+      this.menu.innerHTML = html;
       this.menu.hidden = false;
     }
 
@@ -174,7 +197,7 @@
     async pick(item) {
       if (!item) return;
       this.menu.hidden = true;
-      this.input.value = item.value || item.label;
+      this.input.value = item.type === 'county' ? item.label : (item.value || item.label);
       this.chosen = true;
       this.showHint('');
       if (item.prediction) {                       // a Google place: ask for its GPS point
@@ -188,6 +211,12 @@
             name: place.displayName, address: place.formattedAddress,
             lat: place.location && place.location.lat(), lng: place.location && place.location.lng()}}));
         } catch (e) { /* the text is still usable */ }
+      } else if (item.type === 'county') {
+        // a whole county: search by county, not by a circle around its town
+        this.input.dataset.county = item.county;
+        if (this.countyField) this.countyField.value = item.county;
+        this.setPoint(null, null, null);
+        this.input.dispatchEvent(new CustomEvent('ta-place', {bubbles: true, detail: item}));
       } else {
         this.setPoint(item.lat, item.lng, item.area_id);
         this.input.dispatchEvent(new CustomEvent('ta-place', {bubbles: true, detail: item}));
