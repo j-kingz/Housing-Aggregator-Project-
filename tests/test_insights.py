@@ -71,8 +71,14 @@ class TestBudgetRange:
     def test_a_range(self):
         assert services.parse_budget_range("20,000 - 30,000") == (20000, 30000)
 
-    def test_a_single_value(self):
-        assert services.parse_budget_range("25,000") == (25000, 25000)
+    def test_a_single_value_is_a_ceiling(self):
+        assert services.parse_budget_range("25,000") == (None, 25000)
+
+    def test_shorthand_and_words(self):
+        assert services.parse_budget_range("50k") == (None, 50000)
+        assert services.parse_budget_range("under 50000") == (None, 50000)
+        assert services.parse_budget_range("1.2m") == (None, 1_200_000)
+        assert services.parse_budget_range("from 30000") == (30000, None)
 
     def test_nothing(self):
         assert services.parse_budget_range(None) == (None, None)

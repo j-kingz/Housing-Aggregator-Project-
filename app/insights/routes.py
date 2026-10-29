@@ -7,6 +7,7 @@ from app.analytics import services as analytics
 from app.extensions import db
 from app.insights import services
 from app.models import Area, Property
+from app.places.services import resolve_area
 
 insights_bp = Blueprint("insights", __name__, url_prefix="/insights")
 
@@ -18,77 +19,122 @@ def _renter():
     return None
 
 
+def _money(value):
+    """A positive number from a form field, or None."""
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except ValueError:
+        return None
+    return number if 0 < number < 1_000_000_000 else None
+
+
+def _save_profile(renter, form):
+    """Store the analyser form on the renter. Returns a list of problems."""
+    problems = []
+
+    income_text = form.get("monthlyincome", "").strip()
+    income = _money(income_text) if income_text else None
+    if income_text and income is None:
+        problems.append("Monthly income has to be a number, for example 80000.")
+    renter.monthlyincome = income
+
+    low, high = _money(form.get("budget_min")), _money(form.get("budget_max"))
+    if low and high and low > high:
+        low, high = high, low
+    if low and high:
+        renter.budgetrange = f"{low:.0f} - {high:.0f}"
+    elif high:
+        renter.budgetrange = f"{high:.0f}"
+    elif low:
+        renter.budgetrange = f"from {low:.0f}"
+    else:
+        renter.budgetrange = None
+
+    preferred = form.get("preferredlocation", "").strip()
+    if preferred:
+        area, _ = resolve_area(preferred)
+        if area is None:
+            problems.append(f"We don't know a neighbourhood called \"{preferred}\". Pick one from the list.")
+            preferred = ""
+        else:
+            preferred = area.name
+    renter.preferredlocation = preferred or None
+
+    renter.commute_mode = form.get("commute_mode", "matatu").strip() or "matatu"
+    if renter.commute_mode not in services.COMMUTE_MODES:
+        renter.commute_mode = "matatu"
+
+    # where they work or study: an exact point when picked from the map
+    # suggestions, otherwise the centre of the neighbourhood they named
+    workplace = form.get("workplace", "").strip()
+    renter.workplace = workplace or None
+    renter.workplace_lat = renter.workplace_lng = None
+    renter.workplace_area_id = None
+    renter.workplacearea = None
+    if workplace:
+        try:
+            lat, lng = float(form.get("workplace_lat", "")), float(form.get("workplace_lng", ""))
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                renter.workplace_lat, renter.workplace_lng = lat, lng
+        except ValueError:
+            pass
+        area_id = form.get("workplace_area_id", "").strip()
+        area = db.session.get(Area, int(area_id)) if area_id.isdigit() else None
+        if area is None:
+            area, _ = resolve_area(workplace)
+        if area is not None:
+            renter.workplace_area_id = area.area_id
+            renter.workplacearea = area.name
+        if renter.workplace_lat is None and area is None:
+            problems.append(
+                f"We could not place \"{workplace}\" on the map, so travel costs cannot be worked out. "
+                "Pick it from the suggestions."
+            )
+    return problems
+
+
 @insights_bp.route("/budget", methods=["GET", "POST"])
 @login_required
 def budget():
-    """The budget analyser.
+    """What can I afford?
 
-    Renters save their income, budget and workplace here, then see every
-    listing that fits with the rent-to-income ratio and the commute cost
-    worked out for each one.
+    The renter says what they earn, what they can pay, where they want to live
+    and where they work. The page answers with the homes they can go for, each
+    with the reasons, the real monthly cost including travel, and which unit is
+    vacant.
     """
     renter = _renter()
     if renter is None:
         flash(
-            "The budget analyser is for renter accounts. Switch to a renter account to use it.",
+            "This page is for renter accounts. Switch to a renter account to use it.",
             "warning",
         )
         return redirect(url_for("main.home"))
 
-    areas = Area.query.order_by(Area.city, Area.name).all()
-
     if request.method == "POST":
-        renter.monthlyincome = request.form.get("monthlyincome", "").strip() or None
-        renter.preferredlocation = request.form.get("preferredlocation", "").strip() or None
-        renter.budgetrange = request.form.get("budgetrange", "").strip() or None
-        renter.workplace = request.form.get("workplace", "").strip() or None
-        renter.commute_mode = request.form.get("commute_mode", "matatu").strip() or "matatu"
-
-        # the workplace area is picked from the list
-        area_id = request.form.get("workplace_area_id", "").strip()
-        if area_id.isdigit():
-            area = Area.query.get(int(area_id))
-            renter.workplace_area_id = area.area_id if area else None
-            renter.workplacearea = area.name if area else None
-        else:
-            renter.workplace_area_id = None
-            renter.workplacearea = None
-
+        problems = _save_profile(renter, request.form)
         db.session.commit()
-        flash("Your budget profile has been saved.", "success")
+        for problem in problems:
+            flash(problem, "warning")
+        if not problems:
+            flash("Saved. Here are the homes you can go for.", "success")
         return redirect(url_for("insights.budget"))
 
-    matches = services.matching_listings(renter)
-    target = services.commute_targets(renter)
-
-    # the listing closest to the workplace, for the summary card
-    closest = None
-    with_distance = [m for m in matches if m.get("distance_km") is not None]
-    if with_distance:
-        closest = min(with_distance, key=lambda m: m["distance_km"])
-
-    min_price, max_price = services.parse_budget_range(renter.budgetrange)
-    overall = services.rent_to_income(max_price or 0, renter.monthlyincome)
-
-    # how the matched listings are spread by rent
-    distribution = analytics.rent_distribution([entry["listing"] for entry in matches])
-
-    points, target_point = services.map_points(matches, target)
+    beds = request.args.get("beds", type=int)
+    result = services.recommend(renter, beds=beds)
+    points, target_point = services.map_points(result["picks"], renter, url_for)
+    min_price, max_price = result["budget_min"], result["budget_max"]
 
     return render_template(
         "insights/budget.html",
         renter=renter,
-        matches=matches,
-        closest=closest,
-        areas=areas,
+        result=result,
+        beds=beds,
         commute_modes=services.COMMUTE_MODES,
-        target=target,
-        target_point=target_point,
         points=points,
-        distribution=distribution,
+        target_point=target_point,
         budget_min=min_price,
         budget_max=max_price,
-        overall=overall,
     )
 
 
