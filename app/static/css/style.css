@@ -678,3 +678,51 @@ body { font-size: 0.97rem; }
   .hero-home { padding: 2.2rem 0 3.5rem; }
   .listing-thumb { height: 170px; }
 }
+
+.ta-group {
+  padding: 0.35rem 0.9rem 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #f8faf9;
+}
+.ta-credit { padding: 0.3rem 0.9rem; font-size: 0.68rem; color: var(--muted); background: #f8faf9; }
+
+/* ---- saved homes (heart) ---- */
+.heart-btn {
+  position: absolute; top: 0.7rem; right: 0.7rem; z-index: 5;
+  width: 38px; height: 38px; border-radius: 50%; border: 0;
+  background: rgba(255, 255, 255, 0.95); color: #6b7280;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); font-size: 1.1rem;
+  transition: transform 0.15s, color 0.15s;
+}
+.heart-btn:hover { transform: scale(1.12); color: #e11d48; }
+.heart-btn.saved { color: #e11d48; }
+
+/* ---- unit not confirmed: send the person to the advert ---- */
+.confirm-help {
+  display: block; font-size: 0.78rem; color: #92400e; background: #fffbeb;
+  border: 1px solid #fde68a; border-radius: 8px; padding: 0.3rem 0.55rem;
+  margin-bottom: 0.5rem; text-decoration: none;
+}
+a.confirm-help:hover { background: #fef3c7; color: #78350f; }
+
+/* ---- vacancy tabs ---- */
+.avail-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.avail-tabs a {
+  padding: 0.35rem 0.9rem; border-radius: 999px; background: #fff; text-decoration: none;
+  color: var(--ink); border: 1px solid rgba(15, 118, 110, 0.2); font-size: 0.88rem;
+}
+.avail-tabs a span { color: var(--muted); margin-left: 0.25rem; font-size: 0.78rem; }
+.avail-tabs a.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.avail-tabs a.active span { color: rgba(255, 255, 255, 0.8); }
+
+.km-label { background: #fffbeb; border: 1px solid #f59e0b; color: #92400e; font-weight: 700; box-shadow: none; }
+.detail-banner .heart-btn { top: 0.9rem; right: 0.9rem; }
+
+/* keep the menu on one line even when signed in */
+.site-nav .nav-link { white-space: nowrap; font-size: 0.9rem; padding: 0.4rem 0.6rem !important; }
+@media (min-width: 768px) and (max-width: 1199.98px) { .site-nav .nav-link i { display: none; } }

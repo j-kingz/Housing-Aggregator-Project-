@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_icon, location as where, verdict_badge, page_controls, empty_state, photo %}
+{% from "_macros.html" import category_icon, location as where, verdict_badge, page_controls, empty_state, photo, heart, confirm_help %}
 {% block title %}Search{% endblock %}
 
 {% block hero %}
@@ -22,13 +22,15 @@
 <form method="get" class="search-box">
   <div class="row g-2">
     <div class="col-md-4">
-      <label class="form-label small text-muted mb-1" for="location">Where (place or building)</label>
+      <label class="form-label small text-muted mb-1" for="location">Where in Kenya</label>
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
         <input type="text" id="location" name="location" class="form-control"
-               placeholder="Start typing, e.g. Sarit Centre" value="{{ location }}"
-               data-suggest="place" data-google data-lat="#place_lat" data-lng="#place_lng">
+               placeholder="County, town, estate, mall or building" value="{{ location_label }}"
+               data-suggest="place" data-google data-lat="#place_lat" data-lng="#place_lng"
+               data-county-field="#county">
       </div>
+      <input type="hidden" id="county" name="county" value="{{ county }}">
     </div>
     <div class="col-md-3">
       <label class="form-label small text-muted mb-1" for="area">Neighbourhood</label>
@@ -36,7 +38,7 @@
         <span class="input-group-text"><i class="bi bi-signpost-split"></i></span>
         <input type="text" id="area" name="area" class="form-control"
                placeholder="Start typing, e.g. Kilimani" value="{{ area }}"
-               data-suggest="area" data-require-match>
+               data-suggest="area" data-require-match data-county-from="#location">
       </div>
     </div>
     <div class="col-md-2">
@@ -135,6 +137,25 @@
 </div>
 {% endif %}
 
+{# Show everything, only the confirmed vacant homes, or the ones to check #}
+<div class="avail-tabs mb-3">
+  {% set tab_args = dict(location=location, county=county, area=area, building=building, floor=floor, category=category,
+                         max_price=max_price, bedrooms=bedrooms, source=source, sort=sort, place_lat=place_lat, place_lng=place_lng) %}
+  <a href="{{ url_for('main.home', **tab_args) }}" class="{{ 'active' if not availability }}">All homes <span>{{ avail_counts.all }}</span></a>
+  <a href="{{ url_for('main.home', availability='vacant', **tab_args) }}" class="{{ 'active' if availability == 'vacant' }}"><i class="bi bi-check-circle me-1"></i>Vacant only <span>{{ avail_counts.vacant }}</span></a>
+  <a href="{{ url_for('main.home', availability='unknown', **tab_args) }}" class="{{ 'active' if availability == 'unknown' }}">Not confirmed <span>{{ avail_counts.unknown }}</span></a>
+</div>
+
+{% if map_points %}
+<div class="panel p-2 mb-4">
+  <div class="d-flex justify-content-between align-items-center px-2 pt-1 pb-2">
+    <h6 class="mb-0"><i class="bi bi-map me-1"></i> All {{ map_points|length }} locations on the map</h6>
+    <span class="small text-muted">Click a dot to open the home</span>
+  </div>
+  <div class="ha-map" data-points='{{ map_points|tojson }}'></div>
+</div>
+{% endif %}
+
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
     <h5 class="mb-0">Homes that match</h5>
@@ -153,6 +174,8 @@
 <div class="row g-4">
   {% for listing in listings %}
   <div class="col-sm-6 col-lg-4">
+    <div class="position-relative h-100">
+    {{ heart(listing.listing_id, listing.listing_id in favorite_ids) }}
     <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="text-decoration-none text-reset">
       <div class="card listing-card h-100">
         <div class="listing-thumb">
@@ -188,6 +211,7 @@
               <span class="badge text-bg-light border ms-auto">Not confirmed</span>
             {% endif %}
           </div>
+          {% if listing.availability_status not in ('vacant', 'reserved', 'occupied') %}{{ confirm_help(listing, false) }}{% endif %}
           {% if listing.latitude is not none %}
             <p class="text-muted small mb-2"><i class="bi bi-crosshair me-1"></i>GPS {{ "%.4f"|format(listing.latitude|float) }}, {{ "%.4f"|format(listing.longitude|float) }}{% if not listing.gps_exact %} (approx.){% endif %}</p>
           {% endif %}
@@ -204,6 +228,7 @@
         </div>
       </div>
     </a>
+    </div>
   </div>
   {% endfor %}
 </div>
@@ -211,7 +236,7 @@
 {{ page_controls(pagination, 'main.home', {
   'location': location, 'area': area, 'category': category, 'max_price': max_price,
   'bedrooms': bedrooms, 'source': source, 'sort': sort, 'place_lat': place_lat,
-  'place_lng': place_lng, 'availability': availability, 'building': building, 'floor': floor,
+  'place_lng': place_lng, 'availability': availability, 'county': county, 'building': building, 'floor': floor,
   }) }}
 {% else %}
   {{ empty_state('bi-search', 'Nothing matches that search yet.',

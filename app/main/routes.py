@@ -4,7 +4,8 @@ from sqlalchemy import func, or_
 
 from app.analytics import services as analytics
 from app.extensions import db
-from app.models import Area, Property, ScrapingSource
+from app.counties import find_county
+from app.models import Area, Favorite, Property, ScrapingSource
 from app.places.services import resolve_area
 
 main_bp = Blueprint("main", __name__)
@@ -45,6 +46,7 @@ def home():
     several sites.
     """
     location = request.args.get("location", "").strip()
+    county_text = request.args.get("county", "").strip()
     place_lat = to_float(request.args.get("place_lat"))
     place_lng = to_float(request.args.get("place_lng"))
     area = request.args.get("area", "").strip()
@@ -62,6 +64,13 @@ def home():
 
     notices = []
 
+    county = ""
+    found_county = find_county(county_text) or find_county(location)
+    if found_county:
+        county = found_county[0]
+        # "Nairobi County" in the Where box means the whole county, not a text search
+        if find_county(location):
+            location = ""
     if location:
         like = f"%{location}%"
         location_matches = [
@@ -78,6 +87,11 @@ def home():
                 & (Property.longitude.between(place_lng - 0.025, place_lng + 0.025))
             )
         query = query.filter(or_(*location_matches))
+
+    if county:
+        # every listing in a neighbourhood of this county, or in a city of that name
+        in_county = [a.area_id for a in Area.query.filter(func.lower(Area.county) == county.lower())]
+        query = query.filter(or_(Property.area_id.in_(in_county), Property.city.ilike(county)))
 
     if area:
         # the box suggests real neighbourhoods; if the text is a near miss we
@@ -110,6 +124,19 @@ def home():
         if source_id is not None:
             conditions.append(Property.source_id == source_id)
         query = query.filter(or_(*conditions))
+
+    # how many homes are vacant / not confirmed under every other filter (for the tabs)
+    counted = dict(
+        query.order_by(None)
+        .with_entities(Property.availability_status, func.count(Property.listing_id))
+        .group_by(Property.availability_status)
+        .all()
+    )
+    avail_counts = {
+        "all": sum(counted.values()),
+        "vacant": counted.get("vacant", 0),
+        "unknown": counted.get("unknown", 0) + counted.get(None, 0),
+    }
     if availability in AVAILABILITY:
         query = query.filter(Property.availability_status == availability)
 
@@ -131,6 +158,27 @@ def home():
     else:
         query = query.order_by(Property.listingdate.desc(), Property.listing_id.desc())
 
+    # every matching home with a GPS point goes on the map, not only this page
+    map_rows = (
+        query.order_by(None)
+        .filter(Property.latitude.isnot(None))
+        .with_entities(
+            Property.listing_id, Property.title, Property.rentamount,
+            Property.latitude, Property.longitude, Property.availability_status,
+        )
+        .limit(400)
+        .all()
+    )
+    map_points = [
+        {
+            "lat": float(r.latitude), "lng": float(r.longitude),
+            "label": f"{r.title} - KSh {float(r.rentamount):,.0f}"
+                     + (" (vacant)" if r.availability_status == "vacant" else ""),
+            "url": url_for("listings.detail", listing_id=r.listing_id),
+        }
+        for r in map_rows
+    ]
+
     pagination = query.paginate(page=page, per_page=12, error_out=False)
     listings = pagination.items
 
@@ -140,9 +188,17 @@ def home():
     for listing in listings:
         verdicts[listing.listing_id] = analytics.listing_verdict(listing, benchmarks)
 
+    favorite_ids = set()
+    if current_user.is_authenticated:
+        favorite_ids = {
+            f.listing_id for f in Favorite.query.filter_by(user_id=current_user.user_id).all()
+        }
+
     areas = Area.query.order_by(Area.city, Area.name).all()
     sources = (
-        ScrapingSource.query.filter(ScrapingSource.enabled.is_(True))
+        ScrapingSource.query.filter(
+            ScrapingSource.enabled.is_(True), ScrapingSource.profile != "fixture"
+        )
         .order_by(ScrapingSource.name)
         .all()
     )
@@ -175,6 +231,11 @@ def home():
         "home.html",
         stats=stats,
         popular=popular,
+        county=county,
+        location_label=(county + " County") if county and not location else location,
+        avail_counts=avail_counts,
+        map_points=map_points,
+        favorite_ids=favorite_ids,
         listings=listings,
         pagination=pagination,
         verdicts=verdicts,

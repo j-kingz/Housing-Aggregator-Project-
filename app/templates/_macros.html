@@ -86,3 +86,26 @@
      referrerpolicy="no-referrer" onerror="this.remove()">
 {%- endif -%}
 {%- endmacro %}
+
+
+{# The heart that saves a home. Anonymous visitors are sent to log in by favorites.js #}
+{% macro heart(listing_id, saved=false) -%}
+<button type="button" class="heart-btn {{ 'saved' if saved }}" data-listing="{{ listing_id }}"
+        aria-pressed="{{ 'true' if saved else 'false' }}" title="{{ 'Remove from saved homes' if saved else 'Save this home' }}">
+  <i class="bi {{ 'bi-heart-fill' if saved else 'bi-heart' }}"></i>
+</button>
+{%- endmacro %}
+
+{# What to do when the advert does not say whether the unit is free #}
+{% macro confirm_help(listing, as_link=true) -%}
+{%- if not as_link -%}
+<span class="confirm-help"><i class="bi bi-info-circle me-1"></i>Not confirmed. Open this home to see the agent and check it is free.</span>
+{%- elif listing.source_url and listing.source_url.startswith(('http://', 'https://')) -%}
+<a class="confirm-help" href="{{ listing.source_url }}" target="_blank" rel="noopener noreferrer"
+   onclick="event.stopPropagation()">
+  <i class="bi bi-box-arrow-up-right me-1"></i>Open the original advert to see the agent and confirm it is free
+</a>
+{%- else -%}
+<span class="confirm-help">Ask the landlord to confirm this unit is free</span>
+{%- endif -%}
+{%- endmacro %}
