@@ -58,7 +58,17 @@ def add_areas():
     """Load the neighbourhood list used for search filters and distances."""
     added = 0
     for name, city, county, lat, lon, description in AREAS:
-        if not Area.query.filter_by(name=name).first():
+        existing = Area.query.filter_by(name=name).first()
+        if existing is not None:
+            # keep the stored centre point in step with the corrected seed list
+            if (
+                existing.latitude is None
+                or abs(float(existing.latitude) - lat) > 1e-6
+                or abs(float(existing.longitude) - lon) > 1e-6
+            ):
+                existing.latitude, existing.longitude = lat, lon
+                added += 1
+        else:
             db.session.add(
                 Area(
                     name=name,
@@ -75,13 +85,53 @@ def add_areas():
     return added
 
 
+def refresh_listing_gps():
+    """Point listings that only have an approximate location at the corrected area centre."""
+    from app.models import Property
+
+    moved = 0
+    rows = Property.query.filter(
+        Property.area_id.isnot(None), Property.gps_exact.isnot(True)
+    ).all()
+    for listing in rows:
+        area = listing.area
+        if area is not None and area.latitude is not None:
+            listing.latitude, listing.longitude = area.latitude, area.longitude
+            listing.gps_exact = False
+            moved += 1
+    if moved:
+        db.session.commit()
+    return moved
+
+
+def clean_bad_unit_numbers():
+    """Remove unit numbers that were really "2 Bedrooms" read by an older parser."""
+    from sqlalchemy import or_
+
+    from app.models import Property
+
+    rows = Property.query.filter(
+        or_(Property.room_number.ilike("%bed%"), Property.room_number.ilike("%bath%"))
+    ).all()
+    for row in rows:
+        row.room_number = None
+    if rows:
+        db.session.commit()
+    return len(rows)
+
+
 def add_sources():
     """Register the default scraping sources."""
     added = 0
     for source in DEFAULT_SOURCES:
-        if not ScrapingSource.query.filter_by(name=source["name"]).first():
+        existing = ScrapingSource.query.filter_by(name=source["name"]).first()
+        if existing is None:
             db.session.add(ScrapingSource(**source))
             added += 1
+        else:
+            # the address and profile of a site can change, so refresh them
+            for field in ("base_url", "listing_url", "profile", "notes"):
+                setattr(existing, field, source[field])
     if added:
         db.session.commit()
     return added
@@ -112,6 +162,10 @@ if __name__ == "__main__":
         roles = add_roles()
         areas = add_areas()
         sources = add_sources()
+        refresh_listing_gps()
+        cleaned_units = clean_bad_unit_numbers()
+        if cleaned_units:
+            print(f"  unit numbers cleaned: {cleaned_units}")
 
         print(f"'{Config.DB_NAME}' is ready.")
         if added_columns:

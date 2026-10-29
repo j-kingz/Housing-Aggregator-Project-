@@ -145,6 +145,9 @@ class RenterDetails(db.Model):
     workplacearea = db.Column(db.String(100))
     workplace_area_id = db.Column(db.Integer, db.ForeignKey("area.area_id"))
     commute_mode = db.Column(db.String(30), default="matatu")
+    # exact GPS of the workplace when it was picked from Google Places
+    workplace_lat = db.Column(db.Numeric(10, 6))
+    workplace_lng = db.Column(db.Numeric(10, 6))
 
     user = db.relationship("User", back_populates="renter")
     workplace_area = db.relationship("Area", foreign_keys=[workplace_area_id])
@@ -230,10 +233,15 @@ class Property(db.Model):
     # hash of the normalised listing, used for cross-source de-duplication
     fingerprint = db.Column(db.String(64), index=True)
     description = db.Column(db.Text)
+    # photo address on the source site (shown as a link, not copied)
+    image_url = db.Column(db.String(500))
     amenities = db.Column(db.String(255))
     size_sqft = db.Column(db.Integer)
     latitude = db.Column(db.Numeric(10, 6))
     longitude = db.Column(db.Numeric(10, 6))
+    # True when the GPS point is the real unit/building, False when it is only
+    # the centre of the neighbourhood
+    gps_exact = db.Column(db.Boolean, default=False)
     scraped_at = db.Column(db.DateTime, default=utcnow)
     # stale listings are flagged instead of being deleted straight away
     is_active = db.Column(db.Boolean, default=True, index=True)
@@ -363,7 +371,18 @@ class Payment(db.Model):
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     date = db.Column(db.Date, default=date.today)
     modeofpayment = db.Column(db.String(50))
-    status = db.Column(db.String(20), default="pending")
+    status = db.Column(db.String(20), default="pending")  # pending, paid, failed, cancelled
+
+    # M-Pesa (Safaricom Daraja STK push) details
+    phone = db.Column(db.String(20))
+    purpose = db.Column(db.String(50), default="reservation")
+    merchant_request_id = db.Column(db.String(100))
+    checkout_request_id = db.Column(db.String(100), index=True)
+    mpesa_receipt = db.Column(db.String(50))
+    result_desc = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=utcnow)
+    paid_at = db.Column(db.DateTime)
+    simulated = db.Column(db.Boolean, default=False)
 
     renter = db.relationship("RenterDetails", back_populates="payments")
     listing = db.relationship("Property", back_populates="payments")

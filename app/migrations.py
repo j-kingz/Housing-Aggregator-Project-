@@ -19,6 +19,10 @@ BACKFILL_DEFAULTS = {
     "properties": {
         "is_active": "1",
         "availability_status": "'unknown'",
+        "gps_exact": "0",
+    },
+    "payment": {
+        "simulated": "0",
     },
     "notification": {
         "isread": "0",

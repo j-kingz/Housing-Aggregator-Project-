@@ -18,6 +18,19 @@ class Config:
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
+    # ---- M-Pesa (Safaricom Daraja, STK push) ----
+    # With no consumer key the platform runs in demo mode: the whole payment
+    # flow works but no real request is sent and no money moves.
+    MPESA_ENV = os.getenv("MPESA_ENV", "sandbox")  # sandbox or production
+    MPESA_CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY", "")
+    MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "")
+    MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE", "174379")  # Daraja sandbox shortcode
+    MPESA_PASSKEY = os.getenv("MPESA_PASSKEY", "")
+    # public https address Safaricom can reach, e.g. https://abc.ngrok-free.app
+    MPESA_CALLBACK_BASE_URL = os.getenv("MPESA_CALLBACK_BASE_URL", "").rstrip("/")
+    # share of the monthly rent taken as the reservation deposit
+    MPESA_RESERVATION_PERCENT = float(os.getenv("MPESA_RESERVATION_PERCENT", 10))
+
     # quote_plus so a password with @ or / in it doesn't break the url
     SQLALCHEMY_DATABASE_URI = (
         f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}"
