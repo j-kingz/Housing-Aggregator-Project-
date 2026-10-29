@@ -24,12 +24,12 @@ def run_once():
         results = run_all()
         for source, summary in results:
             log.info(
-                "%s: %s pages, %s found, %s new, %s duplicates, %s skipped",
+                "%s: %s pages, %s found, %s new, %s refreshed, %s skipped",
                 source.name,
                 summary["pages"],
                 summary["found"],
                 summary["saved"],
-                summary["duplicates"] + summary["possible"],
+                summary["updated"],
                 summary["errors"],
             )
         return results

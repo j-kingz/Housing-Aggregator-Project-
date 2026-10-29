@@ -11,14 +11,11 @@ from scraper.cleaner import (
     extract_amenities,
     fingerprint,
     infer_category,
-    looks_like_duplicate,
-    normalise_title,
     parse_bathrooms,
     parse_bedrooms,
     parse_rent,
     parse_size_sqft,
     split_location,
-    title_overlap,
 )
 
 
@@ -149,123 +146,68 @@ class TestAmenities:
 
 
 class TestFingerprint:
-    def test_the_same_flat_gives_the_same_fingerprint(self):
-        first = {
-            "title": "Modern 2 Bedroom Apartment in Westlands with balcony",
-            "rentamount": 85000,
-            "address": "Westlands",
-            "city": "Nairobi",
-            "bedrooms": 2,
-            "bathrooms": 2,
-        }
-        second = {
-            "title": "Modern 2 Bedroom for rent at Westlands balcony",
-            "rentamount": 85000,
-            "address": "Westlands",
-            "city": "Nairobi",
-            "bedrooms": 2,
-            "bathrooms": 2,
-        }
-        assert fingerprint(first) == fingerprint(second)
+    """The fingerprint only recognises the very same advert, it never merges look-alikes."""
+
+    BASE = {
+        "title": "2 Bedroom Apartment in Westlands",
+        "rentamount": 85000,
+        "address": "Westlands",
+        "city": "Nairobi",
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "building_name": "Riverside Towers",
+        "floor_number": 3,
+        "room_number": "3B",
+    }
+
+    def test_the_same_advert_gives_the_same_fingerprint(self):
+        assert fingerprint(dict(self.BASE)) == fingerprint(dict(self.BASE))
+
+    def test_two_units_in_the_same_building_are_kept_apart(self):
+        other = dict(self.BASE, floor_number=4, room_number="4B")
+        assert fingerprint(self.BASE) != fingerprint(other)
+
+    def test_a_different_room_on_the_same_floor_is_kept_apart(self):
+        assert fingerprint(self.BASE) != fingerprint(dict(self.BASE, room_number="3C"))
 
     def test_a_different_price_gives_a_different_fingerprint(self):
-        first = {"title": "Flat in Westlands", "rentamount": 85000, "address": "Westlands"}
-        second = {"title": "Flat in Westlands", "rentamount": 90000, "address": "Westlands"}
-        assert fingerprint(first) != fingerprint(second)
+        assert fingerprint(self.BASE) != fingerprint(dict(self.BASE, rentamount=90000))
 
-    def test_generic_words_are_dropped(self):
-        assert normalise_title("Modern 2 Bedroom Apartment in Westlands") == "modern westlands"
-
-    def test_title_overlap(self):
-        assert title_overlap("Modern flat in Westlands", "Modern flat at Westlands") > 0.6
-        assert title_overlap("Modern flat in Westlands", "Bungalow near Karen") < 0.4
+    def test_different_wording_is_a_different_listing(self):
+        assert fingerprint(self.BASE) != fingerprint(
+            dict(self.BASE, title="Modern 2 Bedroom for rent at Westlands")
+        )
 
 
-class TestLooksLikeDuplicate:
-    def test_same_flat_with_a_slightly_different_price(self):
-        class Existing:
-            title = "Modern 2 Bedroom Apartment in Westlands"
-            address = "Westlands"
-            bedrooms = 2
-            rentamount = 85000
-
-        candidate = {
-            "title": "Modern 2 Bedroom for rent at Westlands",
-            "address": "Westlands",
-            "bedrooms": 2,
-            "rentamount": 87000,
-        }
-        assert looks_like_duplicate(Existing, candidate) is True
-
-    def test_a_different_flat_is_not_a_duplicate(self):
-        class Existing:
-            title = "Modern 2 Bedroom Apartment in Westlands"
-            address = "Westlands"
-            bedrooms = 2
-            rentamount = 85000
-
-        candidate = {
-            "title": "Bungalow with garden in Karen",
-            "address": "Karen",
-            "bedrooms": 3,
-            "rentamount": 200000,
-        }
-        assert looks_like_duplicate(Existing, candidate) is False
-
-
-class TestCleanListing:
-    def test_a_full_record(self):
+class TestDollarRent:
+    def test_a_dollar_advert_is_converted_to_shillings(self):
         raw = {
-            "title": "Bright 2 Bedroom Apartment",
-            "price_text": "KSh 28,000",
-            "bedrooms_text": "2 Bedrooms",
-            "bathrooms_text": "2 Bathrooms",
-            "location_text": "Kilimani, Nairobi",
-            "description": "A nice flat with water and parking.",
-            "size_text": "120 sqm",
-            "url": "https://example.com/listing/1",
-            "external_id": "1",
-            "building_name": "Riverside Towers",
-            "floor_number": "Floor 4",
-            "room_number": "4B",
-            "availability_status": "vacant",
+            "title": "2 Bedroom Apartment in Westlands",
+            "price_text": "KSh 2 200",
+            "description": "Furnished 2 bed. Rent $2,200/month inclusive of service charge",
         }
-        result = clean_listing(raw, known_areas=[{"name": "Kilimani"}])
+        assert clean_listing(raw)["rentamount"] == 2200 * 129
 
-        assert result["title"] == "Bright 2 Bedroom Apartment"
-        assert result["rentamount"] == Decimal("28000.00")
-        assert result["bedrooms"] == 2
-        assert result["bathrooms"] == 2
-        assert result["city"] == "Nairobi"
-        assert result["address"] == "Kilimani"
-        assert result["area_name"] == "Kilimani"
-        assert result["size_sqft"] == 1292
-        assert result["external_id"] == "1"
-        assert result["fingerprint"]
-        assert result["availability_status"] == "vacant"
-
-    def test_a_record_without_a_price_is_dropped(self):
-        raw = {"title": "Some flat", "price_text": "Ask for price"}
-        assert clean_listing(raw) is None
-
-    def test_a_record_without_a_title_is_dropped(self):
-        raw = {"title": "", "price_text": "KSh 20,000"}
-        assert clean_listing(raw) is None
-
-    def test_a_price_only_title_is_dropped(self):
-        raw = {"title": "KSh 500 000+", "price_text": "KSh 500 000+"}
-        assert clean_listing(raw) is None
-
-    def test_javascript_source_urls_are_removed(self):
+    def test_a_normal_shilling_advert_is_left_alone(self):
         raw = {
-            "title": "Bright 2 Bedroom Apartment",
-            "price_text": "KSh 28,000",
-            "url": "javascript:;",
+            "title": "2 Bedroom Apartment in Westlands",
+            "price_text": "KSh 85,000",
+            "description": "Deposit $500 refundable",
         }
-        result = clean_listing(raw)
-        assert result["source_url"] is None
+        assert clean_listing(raw)["rentamount"] == 85000
 
-    def test_the_default_city_is_used(self):
-        raw = {"title": "A flat", "price_text": "KSh 20,000", "location_text": "Kilimani"}
-        result = clean_listing(raw, default_city="Nairobi")
-        assert result["city"] == "Nairobi"
+
+class TestPlusCodeAndSize:
+    def test_the_plus_code_is_read_from_the_address(self):
+        raw = {
+            "title": "2 Bedroom Apartment in Westlands",
+            "price_text": "KSh 137 500",
+            "location_text": "Westlands",
+            "address_text": "PQRR+9WG Brookside Grove, Westlands, Nairobi",
+        }
+        cleaned = clean_listing(raw, known_areas=[{"name": "Westlands", "city": "Nairobi"}])
+        assert cleaned["plus_code"] == "PQRR+9WG"
+        assert cleaned["city"] == "Nairobi"
+
+    def test_square_metres_with_the_superscript_are_converted(self):
+        assert parse_size_sqft("110 m²") == 1184

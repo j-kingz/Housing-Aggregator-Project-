@@ -2,7 +2,7 @@
 
 This is the "2.0 Clean & Store" process in the Level 2 DFD:
 
-* 2.1 Remove duplicates  -> fingerprint()
+* 2.1 Identify a listing -> fingerprint() (nothing is merged or dropped)
 * 2.2 Fill missing data  -> match_area() fills in the neighbourhood
 * 2.3 Compute pricing    -> parse_rent() turns "KSh 28,000" into a number
 
@@ -13,6 +13,8 @@ database or a network connection.
 import hashlib
 import re
 from decimal import Decimal, InvalidOperation
+
+from app.geo import find_plus_code
 
 # Rent strings come in many shapes: "KSh 28,000", "28.5k", "1.2M", "KES 45,500"
 CURRENCY_WORDS = (
@@ -152,7 +154,7 @@ def parse_count(text, keywords):
 
 
 def parse_bedrooms(text):
-    return parse_count(text, (r"bed\s*rooms?", r"beds?", r"br\b", r"bedroom"))
+    return parse_count(text, (r"bed\s*rooms?", r"bdrms?", r"beds?", r"br\b", r"bedroom"))
 
 
 def parse_bathrooms(text):
@@ -167,7 +169,7 @@ def parse_size_sqft(text):
     if not text:
         return None
     lowered = str(text).lower()
-    match = re.search(r"(\d[\d,\.]*)\s*(sq\s*m|m2|sq\.?\s*m|metres|meters)", lowered)
+    match = re.search(r"(\d[\d,\.]*)\s*(sq\s*m|m2|m²|sq\.?\s*m|metres|meters)", lowered)
     if match:
         value = _to_decimal(re.sub(r"[,\s]", "", match.group(1)))
         if value is None or value <= 0:
@@ -212,6 +214,13 @@ def split_location(text, known_areas=None):
                 if best is None or len(name) > len(best):
                     best = name
         area_name = best
+        # "Syokimau, Machakos": the place named first beats the county after it
+        first = parts[0].lower()
+        for area in known_areas:
+            name = area["name"] if isinstance(area, dict) else str(area)
+            if name and name.lower() == first:
+                area_name = name
+                break
 
     if area_name is not None:
         lowered_parts = [part.lower() for part in parts]
@@ -273,94 +282,62 @@ def extract_amenities(text, limit=255):
     return result[:limit]
 
 
-# Words that appear in almost every property advert. They are dropped before
-# a listing is fingerprinted so the same flat advertised twice with slightly
-# different wording still matches.
-TITLE_STOPWORDS = {
-    "a", "an", "and", "apartment", "apartments", "at", "available", "bed",
-    "bedroom", "bedrooms", "beds", "for", "home", "house", "houses", "in",
-    "listing", "near", "of", "on", "property", "rent", "rental", "the",
-    "to", "with", "sale", "let",
-}
-
-
-def normalise_title(title):
-    """The distinctive words in a title, lowercased and sorted."""
-    words = re.findall(r"[a-z]+", str(title or "").lower())
-    kept = [word for word in words if word not in TITLE_STOPWORDS]
-    if not kept:
-        # a title made only of generic words, fall back to the whole thing
-        kept = words
-    return " ".join(sorted(set(kept)))
-
-
-def title_overlap(first, second):
-    """How similar two titles are, from 0 to 1.
-
-    Used to spot the same flat advertised on two sites with slightly
-    different wording.
-    """
-    left = set(normalise_title(first).split())
-    right = set(normalise_title(second).split())
-    if not left or not right:
-        return 0.0
-    return len(left & right) / len(left | right)
-
-
 def fingerprint(listing):
-    """A stable hash for a listing, used to spot duplicates.
+    """A stable identity for a listing, used only to recognise a re-scrape.
 
-    The same flat advertised in two different places produces the same
-    fingerprint, which is how the platform removes duplicate listings that
-    have been copied across sites (proposal 2.2.3).
+    Listings are never merged or dropped because they look alike. Two units in
+    the same building have different floors and room numbers, so they get
+    different fingerprints and are both kept. The fingerprint is only used to
+    tell that the scraper has met the very same advert again, so the existing
+    row can be refreshed instead of growing the table on every run.
     """
-    title = normalise_title(listing.get("title"))
+    def part(value):
+        return re.sub(r"\s+", " ", str(value if value is not None else "")).strip().lower()
+
     rent = listing.get("rentamount")
     if rent is not None:
         try:
             rent = str(Decimal(str(rent)).quantize(Decimal("1")))
         except (InvalidOperation, ValueError):
             rent = ""
-    address = re.sub(r"\s+", " ", str(listing.get("address") or "")).strip().lower()
-    city = re.sub(r"\s+", " ", str(listing.get("city") or "")).strip().lower()
-    bedrooms = listing.get("bedrooms")
-    bedrooms = "" if bedrooms is None else str(bedrooms)
-    bathrooms = listing.get("bathrooms")
-    bathrooms = "" if bathrooms is None else str(bathrooms)
-    size = listing.get("size_sqft")
-    size = "" if size is None else str(size)
 
-    key = "|".join([title, str(rent), address, city, bedrooms, bathrooms, size])
+    key = "|".join(
+        part(x)
+        for x in (
+            listing.get("title"),
+            rent,
+            listing.get("address"),
+            listing.get("city"),
+            listing.get("building_name"),
+            listing.get("floor_number"),
+            listing.get("room_number"),
+            listing.get("bedrooms"),
+            listing.get("bathrooms"),
+            listing.get("size_sqft"),
+            listing.get("source_url") or listing.get("external_id"),
+        )
+    )
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
-def looks_like_duplicate(candidate, listing, price_tolerance=0.10):
-    """Is this listing probably the same flat as one we already hold?
+# Some adverts are priced in dollars but the portal still prints the number
+# next to "KSh". The advert text gives it away ("Rent $2,200/month").
+USD_TO_KES = 129
 
-    Used for the softer check where two sites advertise the same place with
-    slightly different wording or a slightly different asking rent. Those
-    are reported rather than silently deleted.
-    """
-    if candidate.address and listing.get("address"):
-        if candidate.address.strip().lower() != str(listing["address"]).strip().lower():
-            return False
-    if not candidate.address and not listing.get("address"):
-        return False
+USD_RE = re.compile(r"(?:\$|usd|us\$)\s*([\d][\d,]*(?:\.\d+)?)", re.IGNORECASE)
 
-    if candidate.bedrooms != listing.get("bedrooms"):
-        return False
 
-    if candidate.rentamount is None or listing.get("rentamount") is None:
-        return False
-
-    existing_rent = float(candidate.rentamount)
-    new_rent = float(listing["rentamount"])
-    if existing_rent <= 0:
-        return False
-    if abs(existing_rent - new_rent) / existing_rent > price_tolerance:
-        return False
-
-    return title_overlap(candidate.title, listing.get("title")) >= 0.6
+def _convert_dollar_rent(rent, raw):
+    """Convert a rent that the advert says is in US dollars into shillings."""
+    text = " ".join(str(raw.get(k) or "") for k in ("title", "description"))
+    for match in USD_RE.finditer(text):
+        try:
+            dollars = Decimal(match.group(1).replace(",", ""))
+        except InvalidOperation:
+            continue
+        if dollars == rent and rent < 20000:
+            return (dollars * USD_TO_KES).quantize(Decimal("1"))
+    return rent
 
 
 def clean_listing(raw, known_areas=None, default_city=None):
@@ -384,6 +361,8 @@ def clean_listing(raw, known_areas=None, default_city=None):
     if rent is None:
         return None
 
+    rent = _convert_dollar_rent(rent, raw)
+
     source_url = (raw.get("url") or raw.get("source_url") or "").strip()
     if source_url.lower().startswith(("javascript:", "data:", "#")):
         source_url = ""
@@ -400,7 +379,16 @@ def clean_listing(raw, known_areas=None, default_city=None):
     elif isinstance(bathrooms, str):
         bathrooms = parse_bathrooms(bathrooms)
 
-    address, city, area_name = split_location(raw.get("location_text"), known_areas)
+    location_text = raw.get("location_text")
+    address_text = raw.get("address_text")
+    plus_code = find_plus_code(address_text)
+    if address_text and location_text:
+        # "PQRR+9WG Brookside Grove, Westlands, Nairobi": the last part is the
+        # city, which the short location label ("Westlands") leaves out
+        tail = [p.strip() for p in address_text.split(",") if p.strip()]
+        if len(tail) >= 2 and tail[-1].lower() != str(location_text).strip().lower():
+            location_text = f"{location_text}, {tail[-1]}"
+    address, city, area_name = split_location(location_text, known_areas)
     if city is None:
         city = default_city
     if not address:
@@ -426,7 +414,7 @@ def clean_listing(raw, known_areas=None, default_city=None):
         "category": raw.get("category") or infer_category(title, bedrooms, body),
         "building_name": (raw.get("building_name") or "").strip()[:150] or None,
         "floor_number": _parse_floor(raw.get("floor_number")),
-        "room_number": (raw.get("room_number") or "").strip()[:30] or None,
+        "room_number": _clean_room(raw.get("room_number")),
         "availability_status": raw.get("availability_status", "unknown") or "unknown",
         "city": (city or "").strip()[:50] or None,
         "address": (address or "").strip()[:150] or None,
@@ -435,6 +423,10 @@ def clean_listing(raw, known_areas=None, default_city=None):
         "amenities": amenities,
         "size_sqft": size_sqft,
         "source_url": source_url[:255] or None,
+        "image_url": _clean_image(raw.get("image_url")),
+        "plus_code": plus_code,
+        "latitude": raw.get("latitude"),
+        "longitude": raw.get("longitude"),
         "external_id": (raw.get("external_id") or "")[:100] or None,
     }
 
@@ -443,6 +435,20 @@ def clean_listing(raw, known_areas=None, default_city=None):
 
     cleaned["fingerprint"] = fingerprint(cleaned)
     return cleaned
+
+
+def _clean_image(value):
+    """A photo address, only if it is a plain web link."""
+    url = (value or "").strip()
+    return url[:500] if url.lower().startswith(("http://", "https://")) else None
+
+
+def _clean_room(value):
+    """A unit number such as "4B", never a count like "2 Bedrooms"."""
+    text = (value or "").strip()
+    if not text or re.search(r"bed|bath|room[s]?|sq", text, re.IGNORECASE):
+        return None
+    return text[:30]
 
 
 def _parse_floor(value):

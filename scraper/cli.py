@@ -100,8 +100,7 @@ def main(argv=None):
                 print(
                     f"{source.name}: {summary['pages']} pages, "
                     f"{summary['found']} found, {summary['saved']} new, "
-                    f"{summary['updated']} updated, {summary['duplicates']} duplicates, "
-                    f"{summary['possible']} possible, {summary['errors']} skipped"
+                    f"{summary['updated']} refreshed, {summary['errors']} skipped"
                 )
     return 0
 

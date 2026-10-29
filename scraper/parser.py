@@ -33,7 +33,7 @@ PROFILES = {
         "description": [".description"],
         "building_name": [".building", "[class*='building']"],
         "floor_number": [".floor", "[class*='floor']"],
-        "room_number": [".room", "[class*='unit']", "[class*='room']"],
+        "room_number": [".room", ".room-number", "[class*='unit']"],
         "availability": [".availability", "[class*='avail']"],
     },
     "buyrentkenya": {
@@ -70,45 +70,67 @@ PROFILES = {
         "description": [".description", "[class*='description']"],
         "building_name": [".building", "[class*='building']"],
         "floor_number": [".floor", "[class*='floor']"],
-        "room_number": [".room", "[class*='unit']", "[class*='room']"],
+        "room_number": [".room", ".room-number", "[class*='unit']"],
         "availability": [".availability", "[class*='avail']"],
     },
     "property24": {
-        "card": [
-            "[data-qa='ListingCard']",
-            ".listing-card",
-            ".PropertyCard",
-            "article",
-        ],
+        # markup checked against https://www.property24.co.ke/property-to-rent-in-nairobi-p95
+        "card": [".js_listingTile", ".p24_regularTile", "article"],
         "title": [
-            "[data-qa='ListingCardTitle']",
-            ".listing-card-title",
-            "h2 a",
-            "h2",
-            "h3",
-            "a[title]",
+            "a[title]@title",
+            ".p24_propertyTitle",
+            "[itemprop='name']@content",
         ],
-        "price": [
-            "[data-qa='ListingCardPrice']",
-            ".listing-card-price",
-            ".price",
-            "[class*='price']",
-        ],
-        "bedrooms": ["[class*='bed']", "[class*='Bedroom']"],
-        "bathrooms": ["[class*='bath']", "[class*='Bathroom']"],
-        "location": [
-            "[data-qa='ListingCardSubtitle']",
-            ".listing-card-location",
-            ".location",
-            "[class*='location']",
-        ],
-        "size": [".size", "[class*='size']"],
-        "amenities": [".amenities", "[class*='amenit']"],
-        "description": [".description", "[class*='description']"],
-        "building_name": [".building", "[class*='building']"],
-        "floor_number": [".floor", "[class*='floor']"],
-        "room_number": [".room", "[class*='unit']", "[class*='room']"],
-        "availability": [".availability", "[class*='avail']"],
+        "price": [".p24_price", "[itemprop='price']@content"],
+        "bedrooms": [".p24_featureDetails[title='Bedrooms']"],
+        "bathrooms": [".p24_featureDetails[title='Bathrooms']"],
+        "location": [".p24_location"],
+        "address": [".p24_address"],
+        "size": [".p24_size"],
+        "amenities": [],
+        "description": ["[itemprop='description']@content", ".p24_excerpt"],
+        "building_name": [],
+        "floor_number": [],
+        "room_number": [],
+        "availability": [".p24_availableBadge"],
+        "image": ["link[itemprop='image']@href"],
+    },
+    "jiji": {
+        # markup checked against https://jiji.co.ke/houses-apartments-for-rent (Oct 2026).
+        # The card is the link itself, 20 per page.
+        "card": [".b-list-advert-base", ".qa-advert-list-item"],
+        "title": [".qa-advert-title"],
+        "price": [".qa-advert-price"],
+        "bedrooms": [],
+        "bathrooms": [],
+        # Jiji prints "County, Area"; the parser reverses it to "Area, County"
+        "location": [".b-list-advert__region"],
+        "location_reverse": True,
+        "size": [],
+        "amenities": [],
+        "description": [".b-list-advert-base__description-text"],
+        "building_name": [],
+        "floor_number": [],
+        "room_number": [],
+        "availability": [],
+        "image": ["img@src"],
+    },
+    "pigiame": {
+        # markup checked against https://www.pigiame.co.ke/apartments-for-rent (Oct 2026)
+        "card": ["article.tw-sr-card"],
+        "title": [".tw-sr-card__title"],
+        "price": [".tw-sr-card__price"],
+        "bedrooms": [],
+        "bathrooms": [],
+        "location": [".tw-sr-card__location"],
+        "size": [],
+        "amenities": [],
+        "description": [".tw-sr-card__description", ".tw-sr-card__title"],
+        "building_name": [],
+        "floor_number": [],
+        "room_number": [],
+        "availability": [],
+        "image": ["img.tw-sr-card__image@src"],
     },
     "generic": {
         "card": [],
@@ -127,22 +149,32 @@ PRICE_RE = re.compile(
     r"(?:ksh|kes|sh\.?|shillings)\s*\d(?:[\d,\.\s]*\d)?(?:\s*[km])?",
     re.IGNORECASE,
 )
-AREA_RE = re.compile(r"(?<![\d.])\d{1,4}\s*(?:sq\.?\s*m|m2|metres|meters)\b", re.IGNORECASE)
-BED_RE = re.compile(r"(\d+)\s*(?:bed\s*rooms?|bedrooms?|beds?\b|\bbr\b)", re.IGNORECASE)
+AREA_RE = re.compile(r"(?<![\d.])\d{1,4}\s*(?:sq\.?\s*m|m2|m²|metres|meters)", re.IGNORECASE)
+BED_RE = re.compile(r"(\d+)\s*(?:bed\s*rooms?|bedrooms?|bdrms?|beds?\b|\bbr\b)", re.IGNORECASE)
 BATH_RE = re.compile(r"(\d+)\s*(?:bath\s*rooms?|bathrooms?|baths?\b|\bwc\b)", re.IGNORECASE)
 
 
 def _first_text(node, selectors):
-    """Return the text of the first selector that matches anything."""
+    """Return the text of the first selector that matches anything.
+
+    A selector may end in "@attribute" (for example "a[title]@title") to read
+    an attribute instead of the visible text.
+    """
     if node is None:
         return None
     for selector in selectors:
+        attribute = None
+        if "@" in selector:
+            selector, attribute = selector.rsplit("@", 1)
         try:
             found = node.select_one(selector)
         except (NotImplementedError, ValueError):
             continue
         if found is not None:
-            text = found.get_text(" ", strip=True)
+            if attribute:
+                text = (found.get(attribute) or "").strip()
+            else:
+                text = found.get_text(" ", strip=True)
             if text:
                 return text
     return None
@@ -212,11 +244,18 @@ def _record_from_card(card, settings, known_areas, base_url):
         price_text = _find_price_in_text(card.get_text(" ", strip=True))
 
     location_text = _clean_text(_first_text(card, settings["location"]))
+    address_text = _clean_text(_first_text(card, settings.get("address") or []))
 
     bedrooms_text = _clean_text(_first_text(card, settings["bedrooms"]))
     bathrooms_text = _clean_text(_first_text(card, settings["bathrooms"]))
 
     card_text = card.get_text(" ", strip=True)
+
+    # some sites print only the number next to a bed / bath icon
+    if bedrooms_text and bedrooms_text.isdigit():
+        bedrooms_text = f"{bedrooms_text} bedrooms"
+    if bathrooms_text and bathrooms_text.isdigit():
+        bathrooms_text = f"{bathrooms_text} bathrooms"
 
     if bedrooms_text is None:
         match = BED_RE.search(card_text)
@@ -228,8 +267,12 @@ def _record_from_card(card, settings, known_areas, base_url):
     if not location_text:
         location_text = _find_area_in_text(card_text, known_areas)
 
-    link = card.find("a", href=True)
+    link = card if (card.name == "a" and card.get("href")) else card.find("a", href=True)
     url = _absolute_url(link["href"], base_url) if link else None
+
+    if settings.get("location_reverse") and location_text:
+        # "Machakos, Mlolongo" -> "Mlolongo, Machakos"
+        location_text = ", ".join(reversed([p.strip() for p in location_text.split(",") if p.strip()]))
 
     if not title and link:
         title = _clean_text(link.get_text(" ", strip=True))
@@ -259,12 +302,16 @@ def _record_from_card(card, settings, known_areas, base_url):
     room_number = _clean_text(_first_text(card, settings.get("room_number") or []))
     availability = _clean_text(_first_text(card, settings.get("availability") or []))
 
+    image_url = _absolute_url(_clean_text(_first_text(card, settings.get("image") or [])), base_url)
+
     return {
         "title": title,
         "price_text": price_text,
         "bedrooms_text": bedrooms_text,
         "bathrooms_text": bathrooms_text,
         "location_text": location_text,
+        "address_text": address_text,
+        "image_url": image_url,
         "description": description,
         "amenities_text": amenities_text,
         "building_name": building_name,

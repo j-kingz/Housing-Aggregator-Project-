@@ -108,7 +108,10 @@ class Fetcher:
                     raise FetchError(f"{url} returned {response.status_code}")
 
                 response.raise_for_status()
-                response.encoding = response.apparent_encoding or response.encoding
+                # modern sites send UTF-8; guessing the encoding turns "m²" into junk
+                declared = (response.encoding or "").lower()
+                if declared in ("", "iso-8859-1"):
+                    response.encoding = "utf-8"
                 return response.text
 
             except requests.RequestException as exc:

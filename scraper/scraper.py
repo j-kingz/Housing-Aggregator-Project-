@@ -1,6 +1,6 @@
 # Scraper - harvests public listings and stores them in the database.
 #
-# The pipeline is:  fetch -> parse -> clean -> de-duplicate -> save
+# The pipeline is:  fetch -> parse -> clean -> save (listings are never dropped as duplicates)
 #
 # Run from the project folder:
 #     python -m scraper.cli sources          list the configured sites
@@ -17,9 +17,10 @@ from pathlib import Path
 
 from app import create_app
 from app.extensions import db
+from app.geo import decode_plus_code
 from app.models import Area, Property, ScrapingRun, ScrapingSource, utcnow
 from scraper import robots_checker
-from scraper.cleaner import clean_listing, looks_like_duplicate
+from scraper.cleaner import clean_listing
 from scraper.fetcher import Fetcher, FetchError
 from scraper.parser import parse_page
 
@@ -51,23 +52,32 @@ def _find_area(area_name, area_lookup):
 
 
 def _existing_matches(cleaned, source):
-    """Find a listing we already have so we do not store it twice.
+    """Find the row this very advert was stored as on an earlier run.
 
-    A listing is the same when the source site gave it the same id, or when
-    the fingerprint (title, rent, location, bedrooms) matches. The second
-    check catches the same flat advertised on two different sites.
+    This is not de-duplication. Listings that merely look alike are all kept,
+    including every unit of the same building. The only thing recognised is
+    the same advert from the same source being met again, so that row is
+    refreshed instead of the table growing on every run.
     """
-    if cleaned.get("external_id") and source is not None:
+    source_id = source.source_id if source is not None else None
+    if cleaned.get("external_id") and source_id is not None:
         match = Property.query.filter_by(
-            source_id=source.source_id, external_id=cleaned["external_id"]
+            source_id=source_id, external_id=cleaned["external_id"]
         ).first()
         if match:
-            return match, "source id"
+            return match
 
-    match = Property.query.filter_by(fingerprint=cleaned["fingerprint"]).first()
-    if match:
-        return match, "fingerprint"
-    return None, None
+    query = Property.query.filter_by(fingerprint=cleaned["fingerprint"])
+    if source_id is not None:
+        query = query.filter_by(source_id=source_id)
+    return query.first()
+
+
+def _city_reference(city):
+    """Any neighbourhood of the city, used as the anchor for a short Plus Code."""
+    if not city:
+        return None
+    return Area.query.filter(Area.city.ilike(city), Area.latitude.isnot(None)).first()
 
 
 def _apply(cleaned, listing, area):
@@ -83,47 +93,52 @@ def _apply(cleaned, listing, area):
     listing.availability_status = cleaned["availability_status"]
     listing.city = cleaned["city"]
     listing.address = cleaned["address"]
+    if not listing.city and area is not None:
+        listing.city = area.city
     listing.description = cleaned["description"]
     listing.amenities = cleaned["amenities"]
     listing.size_sqft = cleaned["size_sqft"]
     listing.source_url = cleaned["source_url"]
     listing.external_id = cleaned["external_id"]
     listing.fingerprint = cleaned["fingerprint"]
+    if cleaned.get("image_url"):
+        listing.image_url = cleaned["image_url"]
     listing.area_id = area.area_id if area else None
-    if area is not None:
+
+    # GPS: the exact point the advert gave us wins, otherwise the centre of
+    # the neighbourhood is used and the listing is marked as approximate.
+    if cleaned.get("latitude") is not None and cleaned.get("longitude") is not None:
+        listing.latitude = cleaned["latitude"]
+        listing.longitude = cleaned["longitude"]
+        listing.gps_exact = True
+    elif area is not None:
         listing.latitude = area.latitude
         listing.longitude = area.longitude
+        listing.gps_exact = False
 
 
 def save_listing(cleaned, source, area_lookup):
-    """Save one cleaned listing.
-
-    Returns "saved", "updated", "duplicate" or "possible".
-    """
+    """Save one cleaned listing. Returns ("saved" | "updated", the row)."""
     area = _find_area(cleaned.get("area_name"), area_lookup)
-    existing, reason = _existing_matches(cleaned, source)
+    existing = _existing_matches(cleaned, source)
+
+    # an exact GPS point can be printed in the advert as a Plus Code
+    if cleaned.get("latitude") is None and cleaned.get("plus_code"):
+        reference = area or _city_reference(cleaned.get("city"))
+        point = decode_plus_code(
+            cleaned["plus_code"],
+            reference.latitude if reference is not None else None,
+            reference.longitude if reference is not None else None,
+        )
+        if point:
+            cleaned["latitude"], cleaned["longitude"] = point
 
     if existing is not None:
-        if reason == "source id":
-            # the site updated the listing, refresh it
-            _apply(cleaned, existing, area)
-            existing.scraped_at = utcnow()
-            existing.is_active = True
-            existing.listingdate = existing.listingdate or utcnow().date()
-            return "updated"
-        return "duplicate"
-
-    # the softer check: the same flat advertised with different wording or a
-    # slightly different rent. These are counted and reported rather than
-    # deleted, because dropping them could lose a real listing.
-    if cleaned.get("address"):
-        candidates = Property.query.filter(
-            Property.address == cleaned["address"],
-            Property.bedrooms == cleaned.get("bedrooms"),
-        ).all()
-        for candidate in candidates:
-            if looks_like_duplicate(candidate, cleaned):
-                return "possible"
+        _apply(cleaned, existing, area)
+        existing.scraped_at = utcnow()
+        existing.is_active = True
+        existing.listingdate = existing.listingdate or utcnow().date()
+        return "updated", existing
 
     listing = Property(
         source_name=source.name if source else SOURCE_NAME,
@@ -134,7 +149,7 @@ def save_listing(cleaned, source, area_lookup):
     )
     _apply(cleaned, listing, area)
     db.session.add(listing)
-    return "saved"
+    return "saved", listing
 
 
 def link_areas():
@@ -215,8 +230,6 @@ def scrape_source(source, pages=None, fetcher=None, run=None):
         "found": 0,
         "saved": 0,
         "updated": 0,
-        "duplicates": 0,
-        "possible": 0,
         "errors": 0,
     }
     new_listing_ids = []
@@ -245,21 +258,13 @@ def scrape_source(source, pages=None, fetcher=None, run=None):
                         log.info("Skipped a listing with missing title or price")
                         continue
 
-                    outcome = save_listing(cleaned, source, area_lookup)
+                    outcome, listing = save_listing(cleaned, source, area_lookup)
                     if outcome == "saved":
                         summary["saved"] += 1
                         db.session.flush()
-                        listing = Property.query.filter_by(
-                            fingerprint=cleaned["fingerprint"]
-                        ).first()
-                        if listing:
-                            new_listing_ids.append(listing.listing_id)
-                    elif outcome == "updated":
-                        summary["updated"] += 1
-                    elif outcome == "possible":
-                        summary["possible"] += 1
+                        new_listing_ids.append(listing.listing_id)
                     else:
-                        summary["duplicates"] += 1
+                        summary["updated"] += 1
                 except Exception as exc:  # noqa: BLE001 - one bad record must not stop the run
                     summary["errors"] += 1
                     log.warning("Skipped a listing that could not be saved: %s", exc)
@@ -292,13 +297,13 @@ def run_source(source, pages=None, notify=True):
     run.pages_fetched = summary["pages"]
     run.listings_found = summary["found"]
     run.listings_saved = summary["saved"]
-    run.duplicates_skipped = summary["duplicates"]
+    run.duplicates_skipped = 0
     run.errors_skipped = summary["errors"]
     run.status = "success" if summary["pages"] else "failed"
     if summary["saved"]:
         run.message = f"{summary['saved']} new, {summary['updated']} updated"
-    elif summary["possible"]:
-        run.message = f"{summary['possible']} looked like duplicates"
+    elif summary["updated"]:
+        run.message = f"{summary['updated']} refreshed, nothing new"
 
     source.last_run_at = utcnow()
     source.last_run_status = run.status
@@ -345,17 +350,14 @@ def import_fixture(path=None):
         db.session.flush()
 
     added = 0
-    skipped = 0
     for record in records:
         try:
             cleaned = clean_listing(record, known_areas=areas)
             if not cleaned:
                 continue
-            outcome = save_listing(cleaned, source, area_lookup)
+            outcome, _ = save_listing(cleaned, source, area_lookup)
             if outcome in ("saved", "updated"):
                 added += 1
-            elif outcome == "possible":
-                skipped += 1
         except Exception as exc:  # noqa: BLE001 - keep going through the sample file
             log.warning("Skipped a sample listing: %s", exc)
 
