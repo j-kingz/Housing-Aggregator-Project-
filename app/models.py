@@ -148,6 +148,10 @@ class RenterDetails(db.Model):
     # exact GPS of the workplace when it was picked from Google Places
     workplace_lat = db.Column(db.Numeric(10, 6))
     workplace_lng = db.Column(db.Numeric(10, 6))
+    # where they want to live: a neighbourhood, a county or any place in Kenya
+    preferred_lat = db.Column(db.Numeric(10, 6))
+    preferred_lng = db.Column(db.Numeric(10, 6))
+    preferred_county = db.Column(db.String(60))
 
     user = db.relationship("User", back_populates="renter")
     workplace_area = db.relationship("Area", foreign_keys=[workplace_area_id])
@@ -386,3 +390,19 @@ class Payment(db.Model):
 
     renter = db.relationship("RenterDetails", back_populates="payments")
     listing = db.relationship("Property", back_populates="payments")
+
+
+class Favorite(db.Model):
+    """A home a person has saved with the heart button."""
+
+    __tablename__ = "favorite"
+    __table_args__ = (db.UniqueConstraint("user_id", "listing_id", name="uq_favorite_user_listing"),)
+
+    favorite_id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.user_id"), nullable=False, index=True)
+    listing_id = db.Column(
+        db.Integer, db.ForeignKey("properties.listing_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    listing = db.relationship("Property")

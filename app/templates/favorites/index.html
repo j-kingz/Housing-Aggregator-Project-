@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_icon, location as where, empty_state, photo, heart %}
+{% block title %}Saved homes{% endblock %}
+{% block content %}
+<h3 class="mb-1"><i class="bi bi-heart-fill text-danger me-2"></i>Saved homes</h3>
+<p class="text-muted">Homes you marked with the heart. Open one to see if it is still free.</p>
+
+{% if listings %}
+<div class="row g-4">
+  {% for listing in listings %}
+  <div class="col-sm-6 col-lg-4">
+    <div class="card listing-card h-100 position-relative">
+      {{ heart(listing.listing_id, true) }}
+      <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="text-decoration-none text-reset">
+        <div class="listing-thumb">{{ category_icon(listing.category) }}{{ photo(listing) }}</div>
+        <div class="card-body">
+          <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small>/ month</small></div>
+          <h6 class="mb-1 text-truncate">{{ listing.title }}</h6>
+          <p class="text-muted small mb-2"><i class="bi bi-geo-alt me-1"></i>{{ where(listing) }}</p>
+          {% if listing.availability_status == 'vacant' %}<span class="badge text-bg-success">Vacant</span>
+          {% elif listing.availability_status == 'reserved' %}<span class="badge text-bg-warning">Reserved</span>
+          {% elif listing.availability_status == 'occupied' %}<span class="badge text-bg-secondary">Occupied</span>
+          {% else %}<span class="badge text-bg-light border">Not confirmed</span>{% endif %}
+        </div>
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+  {{ empty_state('bi-heart', 'You have not saved any homes yet.', 'Press the heart on a home to keep it here.') }}
+{% endif %}
+{% endblock %}

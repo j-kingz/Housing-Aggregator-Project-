@@ -33,6 +33,7 @@ def create_app(config_class=Config):
     from app.notifications.routes import notifications_bp
     from app.places.routes import places_bp
     from app.payments.routes import payments_bp
+    from app.favorites.routes import favorites_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
@@ -43,6 +44,7 @@ def create_app(config_class=Config):
     app.register_blueprint(notifications_bp)
     app.register_blueprint(places_bp)
     app.register_blueprint(payments_bp)
+    app.register_blueprint(favorites_bp)
 
     @app.context_processor
     def inject_notifications():
