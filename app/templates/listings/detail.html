@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_icon, location, verdict_badge, photo %}
+{% from "_macros.html" import category_icon, location, verdict_badge, photo, heart, confirm_help %}
 {% block title %}{{ listing.title }}{% endblock %}
 {% block content %}
 <a href="{{ url_for('main.home') }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Back to search</a>
@@ -7,7 +7,7 @@
 <div class="row g-4 mt-1">
   <div class="col-lg-8">
     <div class="panel">
-      <div class="detail-banner">{{ category_icon(listing.category) }}{{ photo(listing, 'detail-photo') }}</div>
+      <div class="detail-banner">{{ category_icon(listing.category) }}{{ photo(listing, 'detail-photo') }}{{ heart(listing.listing_id, saved) }}</div>
       {% if listing.image_url %}<div class="photo-credit">Photo from {{ listing.source_name or 'the original advert' }}</div>{% endif %}
       <div class="p-4">
         {% if listing.category %}
@@ -47,6 +47,23 @@
             </div>
           </div>
         </div>
+
+        {% if listing.availability_status not in ('vacant', 'reserved', 'occupied') %}
+        <div class="alert alert-warning d-flex gap-3 align-items-start mb-3">
+          <i class="bi bi-telephone-forward fs-4"></i>
+          <div>
+            <strong>We could not confirm this unit is free.</strong>
+            <div class="small mb-2">The advert does not say. Open the original listing to see the agent's phone number and details, and ask whether it is still vacant before you pay anything.</div>
+            {% if listing.source_url and listing.source_url.startswith(('http://', 'https://')) %}
+              <a class="btn btn-sm btn-warning" href="{{ listing.source_url }}" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Open the original listing{% if listing.source_name %} on {{ listing.source_name }}{% endif %}
+              </a>
+            {% else %}
+              <span class="small">Ask the landlord to confirm.</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
 
         <div class="mb-3">
           {{ verdict_badge(verdict) }}
@@ -121,7 +138,13 @@
           <h6 class="small text-uppercase text-muted fw-semibold"><i class="bi bi-geo-alt me-1"></i>Where it is</h6>
           {% if listing.latitude is not none %}
             <div class="ha-map mb-2"
-                 data-points='{{ [{"lat": listing.latitude|float, "lng": listing.longitude|float, "label": listing.title}]|tojson }}'></div>
+                 data-points='{{ [{"lat": listing.latitude|float, "lng": listing.longitude|float, "label": listing.title}]|tojson }}'
+                 {% if work_point %}data-target='{{ work_point|tojson }}'{% endif %}></div>
+            {% if work_point and insight and insight.distance_km is not none %}
+              <div class="small mb-1"><i class="bi bi-signpost-2 me-1"></i><strong>{{ "%.1f"|format(insight.distance_km) }} km</strong> from {{ work_point.label }} (straight line)</div>
+            {% elif current_user.is_authenticated and current_user.is_renter %}
+              <div class="small mb-1"><a href="{{ url_for('insights.budget') }}">Add where you work to see how far this home is &rarr;</a></div>
+            {% endif %}
             <div class="small text-muted">
               GPS {{ "%.6f"|format(listing.latitude|float) }}, {{ "%.6f"|format(listing.longitude|float) }}
               {% if listing.gps_exact %}
@@ -156,15 +179,10 @@
                   About {{ "%.0f minutes"|format(insight.commute.minutes) }} by {{ insight.commute.label|lower }}
                 </div>
               </div>
-              <div class="col-md-4">
-                <div class="text-muted small">Trip cost each way</div>
-                <div class="fs-5 fw-semibold">KSh {{ "{:,.0f}".format(insight.commute.cost) }}</div>
-                <div class="text-muted small">KSh {{ "{:,.0f}".format(insight.commute.cost * 2) }} a month both ways</div>
-              </div>
             {% endif %}
           </div>
           {% if not insight.commute and current_user.is_renter %}
-            <a class="small" href="{{ url_for('insights.budget') }}">Set your workplace to see the commute cost &rarr;</a>
+            <a class="small" href="{{ url_for('insights.budget') }}">Set your workplace to see how far this is &rarr;</a>
           {% endif %}
         </div>
         {% endif %}

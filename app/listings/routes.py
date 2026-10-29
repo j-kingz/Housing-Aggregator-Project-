@@ -7,7 +7,7 @@ from flask_login import current_user, login_required
 from app.analytics import services as analytics
 from app.extensions import db
 from app.insights import services as insights
-from app.models import Area, Property
+from app.models import Area, Favorite, Property
 from app.places.services import resolve_area
 
 listings_bp = Blueprint("listings", __name__, url_prefix="/listings")
@@ -196,12 +196,26 @@ def detail(listing_id):
         )
 
     units = building_units(listing)
+
+    # the renter's workplace, so the map can show how far this home is
+    work_point = None
+    saved = False
+    if current_user.is_authenticated:
+        saved = Favorite.query.filter_by(
+            user_id=current_user.user_id, listing_id=listing.listing_id
+        ).first() is not None
+        work = insights.workplace_point(renter) if renter is not None else None
+        if work is not None:
+            work_point = {"lat": work[0], "lng": work[1], "label": work[2]}
+
     return render_template(
         "listings/detail.html",
         listing=listing,
         verdict=verdict,
         insight=insight,
         units=units,
+        work_point=work_point,
+        saved=saved,
         can_reserve=bool(listing.is_active) and listing.availability_status in ("vacant", "unknown"),
     )
 

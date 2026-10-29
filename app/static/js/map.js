@@ -44,6 +44,18 @@
     return leafletPromise;
   }
 
+  // straight-line distance in km, for the labels and dashed lines
+  function km(a, b) {
+    const R = 6371.0088, rad = x => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function withDistance(p, target) {
+    if (!target) return p.label;
+    return p.label + ' - ' + km(p, target).toFixed(1) + ' km from ' + target.label;
+  }
+
   function parse(el, name) {
     try { return JSON.parse(el.dataset[name] || 'null'); } catch (e) { return null; }
   }
@@ -76,7 +88,7 @@
       if (p.label && !picking) {
         marker.addListener('click', () => {
           const div = document.createElement('div');
-          const strong = document.createElement('strong'); strong.textContent = p.label; div.appendChild(strong);
+          const strong = document.createElement('strong'); strong.textContent = withDistance(p, isTarget ? null : target); div.appendChild(strong);
           if (p.url) { div.appendChild(document.createElement('br')); const a = document.createElement('a'); a.href = p.url; a.textContent = 'Open'; div.appendChild(a); }
           info.setContent(div); info.open(map, marker);
         });
@@ -88,6 +100,24 @@
     points.forEach(p => add(p, false));
     if (target) add(target, true);
     if (all.length > 1) map.fitBounds(bounds, 40);
+
+    if (target && !picking) {
+      points.slice(0, 40).forEach(p => {
+        new google.maps.Polyline({
+          map, path: [{lat: p.lat, lng: p.lng}, {lat: target.lat, lng: target.lng}],
+          strokeColor: '#f59e0b', strokeOpacity: 0, strokeWeight: 2,
+          icons: [{icon: {path: 'M 0,-1 0,1', strokeOpacity: 0.9, scale: 3}, offset: '0', repeat: '14px'}],
+        });
+      });
+      if (points.length === 1) {
+        new google.maps.Marker({
+          map, clickable: false,
+          position: {lat: (points[0].lat + target.lat) / 2, lng: (points[0].lng + target.lng) / 2},
+          icon: {path: google.maps.SymbolPath.CIRCLE, scale: 0},
+          label: {text: km(points[0], target).toFixed(1) + ' km', color: '#92400e', fontWeight: '700', fontSize: '13px'},
+        });
+      }
+    }
 
     if (picking) {
       let pin = markers[0];
@@ -118,7 +148,7 @@
       }).addTo(map);
       if (p.label && !picking) {
         const div = document.createElement('div');
-        const strong = document.createElement('strong'); strong.textContent = p.label; div.appendChild(strong);
+        const strong = document.createElement('strong'); strong.textContent = withDistance(p, isTarget ? null : target); div.appendChild(strong);
         if (p.url) { div.appendChild(document.createElement('br')); const a = document.createElement('a'); a.href = p.url; a.textContent = 'Open'; div.appendChild(a); }
         m.bindPopup(div);
       }
@@ -128,6 +158,15 @@
     points.forEach(p => add(p, false));
     if (target) add(target, true);
     if (all.length > 1) map.fitBounds(all.map(p => [p.lat, p.lng]), {padding: [30, 30]});
+
+    // dashed lines to the workplace, with the distance written on the line
+    if (target && !picking) {
+      points.slice(0, 40).forEach(p => {
+        const line = L.polyline([[p.lat, p.lng], [target.lat, target.lng]],
+                                {color: '#f59e0b', weight: 2, dashArray: '6 6'}).addTo(map);
+        line.bindTooltip(km(p, target).toFixed(1) + ' km', {permanent: points.length === 1, className: 'km-label'});
+      });
+    }
 
     if (picking) {
       let pin = layers[0] || null;

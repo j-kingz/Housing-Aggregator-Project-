@@ -12,6 +12,7 @@ to replace a route planner, and the interface says so.
 import math
 import re
 
+from app.counties import find_county
 from app.models import Area, Property
 
 EARTH_RADIUS_KM = 6371.0088
@@ -281,26 +282,26 @@ def _pool(lo, hi, beds, limit=600):
     return query.order_by(Property.rentamount.asc()).limit(limit).all()
 
 
-def _reasons(entry, listing, pref_area):
+def _reasons(entry, listing, pref_label):
     reasons = []
     r2i = entry["rent_to_income"]
     if r2i and r2i.get("ratio_percent") is not None:
         reasons.append(f"Rent is {r2i['ratio_percent']:.0f}% of your income ({r2i['label'].lower()})")
     if entry["distance_km"] is not None and entry["commute"]:
         trip = f"{entry['distance_km']:.1f} km from {entry.get('workplace') or 'work'}"
-        if entry["monthly_commute"]:
-            trip += f", about KSh {entry['monthly_commute']:,.0f} a month to travel"
+        if entry["commute"].get("minutes"):
+            trip += f", about {entry['commute']['minutes']:.0f} minutes by {entry['commute']['label'].lower()}"
         reasons.append(trip)
     verdict = entry.get("verdict") or {}
     if verdict.get("verdict") == "cheap":
         reasons.append(f"{abs(verdict['difference_percent']):.0f}% below the usual rent in the area")
     elif verdict.get("verdict") == "fair":
         reasons.append("Priced fairly for the area")
-    if pref_area is not None:
+    if pref_label:
         reasons.append(
-            f"In {pref_area.name}, your preferred area"
+            f"In {pref_label}, where you want to live"
             if entry["in_pref"]
-            else f"Close to {pref_area.name}"
+            else f"Close to {pref_label}"
         )
     if listing.availability_status == "vacant":
         where = []
@@ -320,7 +321,7 @@ def recommend(renter, beds=None, limit=12):
     How it decides:
     * the rent ceiling is the renter's own maximum when they gave one,
       otherwise 40% of their income (the most that is still manageable);
-    * every open unit under the ceiling is scored on its real monthly cost
+    * every open unit under the ceiling is scored on its rent
       (rent plus travelling to work), distance, whether it is confirmed
       vacant, whether it is cheap for its area and whether it is in the area
       they like;
@@ -349,9 +350,23 @@ def recommend(renter, beds=None, limit=12):
             "Add your income or the most you can pay, so the list can be narrowed to what you can afford."
         )
 
-    pref_area = None
+    # where they want to live: a known neighbourhood, a whole county, or any
+    # place in Kenya they picked on the map
+    pref_area, pref_county, pref_point, pref_label = None, None, None, None
     if renter and renter.preferredlocation:
+        pref_label = renter.preferredlocation
         pref_area, _ = resolve_area(renter.preferredlocation)
+        if pref_area is not None:
+            pref_label = pref_area.name
+            pref_point = (float(pref_area.latitude), float(pref_area.longitude))
+        elif renter.preferred_lat is not None and renter.preferred_lng is not None:
+            pref_point = (float(renter.preferred_lat), float(renter.preferred_lng))
+        county_hit = find_county(renter.preferred_county or renter.preferredlocation)
+        if county_hit:
+            pref_county = county_hit[0]
+            pref_label = f"{pref_county} County"
+            if pref_point is None:
+                pref_point = (county_hit[1], county_hit[2])
     area_lookup = {a.name.lower(): a for a in Area.query.all()}
     mode = (renter.commute_mode if renter else None) or "matatu"
     benchmarks = analytics.area_benchmarks()
@@ -360,22 +375,27 @@ def recommend(renter, beds=None, limit=12):
         entry = analyse_listing(listing, renter, area_lookup, mode)
         entry["listing"] = listing
         entry["verdict"] = analytics.listing_verdict(listing, benchmarks)
-        commute = entry["commute"]
-        entry["monthly_commute"] = (
-            commute["cost"] * 2 * WORKING_DAYS if commute and commute.get("cost") is not None else 0.0
-        )
-        entry["total_monthly"] = float(listing.rentamount) + entry["monthly_commute"]
-        entry["total_ratio"] = (entry["total_monthly"] / income * 100) if income else None
+        entry["total_monthly"] = float(listing.rentamount)
 
         in_pref = near_pref = False
-        if pref_area is not None:
-            in_pref = listing.area_id == pref_area.area_id or (
-                (listing.address or "").strip().lower() == pref_area.name.lower()
-            )
-            if not in_pref:
+        if pref_label:
+            listing_county = (listing.area.county if listing.area is not None else None) or ""
+            if pref_county:
+                in_pref = (
+                    listing_county.lower() == pref_county.lower()
+                    or (listing.city or "").lower() == pref_county.lower()
+                )
+            if pref_area is not None and not in_pref:
+                in_pref = listing.area_id == pref_area.area_id or (
+                    (listing.address or "").strip().lower() == pref_area.name.lower()
+                )
+            if pref_point is not None and not in_pref:
                 lat, lon = listing_coordinates(listing, area_lookup)
-                d = haversine_km(lat, lon, pref_area.latitude, pref_area.longitude)
-                near_pref = d is not None and d <= 6.0
+                d = haversine_km(lat, lon, pref_point[0], pref_point[1])
+                if d is not None:
+                    # a picked building or estate counts as "there" within 3 km
+                    in_pref = pref_area is None and pref_county is None and d <= 3.0
+                    near_pref = d <= 8.0
         entry["in_pref"], entry["near_pref"] = in_pref, near_pref
 
         # lower score = better fit
@@ -386,13 +406,13 @@ def recommend(renter, beds=None, limit=12):
         if listing.availability_status != "vacant":
             score += 8
         score += {"cheap": -8, "expensive": 8}.get((entry["verdict"] or {}).get("verdict"), 0)
-        if pref_area is not None and not in_pref:
+        if pref_label and not in_pref:
             score += 4 if near_pref else 14
         entry["score"] = score
 
         if income:
             ratio = entry["rent_to_income"]["ratio_percent"]
-            if ratio <= AFFORDABLE_RATIO and (entry["total_ratio"] or 0) <= TOTAL_COMFORT_RATIO:
+            if ratio <= AFFORDABLE_RATIO:
                 entry["tier"] = "comfortable"
             elif ratio <= STRETCH_RATIO:
                 entry["tier"] = "stretch"
@@ -400,23 +420,23 @@ def recommend(renter, beds=None, limit=12):
                 entry["tier"] = "over"
         else:
             entry["tier"] = "within"
-        entry["reasons"] = _reasons(entry, listing, pref_area)
+        entry["reasons"] = _reasons(entry, listing, pref_label)
         return entry
 
     entries = [build(l) for l in _pool(user_min, ceiling, beds)]
 
-    if pref_area is not None and entries:
+    if pref_label and entries:
         in_area = [e for e in entries if e["in_pref"]]
         close = [e for e in entries if not e["in_pref"] and e["near_pref"]]
         if in_area or close:
             entries = in_area + close
             if not in_area:
                 notes.append(
-                    f"Nothing is open in {pref_area.name} within your budget, so nearby areas are shown."
+                    f"Nothing is open in {pref_label} within your budget, so nearby areas are shown."
                 )
         else:
             notes.append(
-                f"Nothing is open in or near {pref_area.name} within your budget, so other areas are shown."
+                f"Nothing is open in or near {pref_label} within your budget, so other areas are shown."
             )
     entries.sort(key=lambda e: e["score"])
 
@@ -464,6 +484,7 @@ def recommend(renter, beds=None, limit=12):
         "comfortable_max": comfortable_max,
         "stretch_max": stretch_max,
         "preferred_area": pref_area,
+        "preferred_label": pref_label,
         "picks": entries[:limit],
         "total_found": len(entries),
         "tiers": tiers,

@@ -48,15 +48,14 @@
 
     <div class="col-md-4">
       <div class="panel p-3 h-100">
-        <div class="text-muted small">Trip cost each way</div>
+        <div class="text-muted small">Travel time</div>
         <div class="fs-3 fw-semibold">
-          {% if insight.commute and insight.commute.cost is not none %}
-            KSh {{ "{:,.0f}".format(insight.commute.cost) }}
+          {% if insight.commute and insight.commute.minutes is not none %}
+            {{ "%.0f min"|format(insight.commute.minutes) }}
           {% else %}-{% endif %}
         </div>
         <div class="text-muted small">
-          {% if insight.commute %}
-            About {{ "%.0f minutes"|format(insight.commute.minutes) }} by {{ insight.commute.label|lower }}
+          {% if insight.commute %}By {{ insight.commute.label|lower }}, an estimate
           {% else %}Add your workplace to see this{% endif %}
         </div>
       </div>

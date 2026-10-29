@@ -57,7 +57,10 @@ class TestSearchShowsTheUnit:
         add_unit(title="Far flat", latitude=-1.40, longitude=36.90)
         add_unit(title="Near flat", latitude=-1.2601, longitude=36.8001)
         page = client.get("/?location=Westlands&place_lat=-1.26&place_lng=36.80").get_data(as_text=True)
-        assert page.index("Near flat") < page.index("Far flat")
+        # compare the cards (the map data above them also names both homes)
+        near = page.index('text-truncate">Near flat')
+        far = page.index('text-truncate">Far flat')
+        assert near < far
 
 
 class TestBuildingPage:

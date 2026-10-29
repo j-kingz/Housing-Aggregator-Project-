@@ -2,7 +2,7 @@
 
 from app.extensions import db
 from app.insights import services
-from app.models import RenterDetails
+from app.models import Area, RenterDetails
 from tests.conftest import login, make_user
 from tests.test_units import add_unit
 
@@ -77,16 +77,35 @@ class TestRecommend:
         assert result["near_misses"]
         assert any("10,000" in n for n in result["notes"])
 
-    def test_travel_cost_is_part_of_the_real_monthly_cost(self, app, areas):
+    def test_distance_to_work_is_shown_but_no_trip_cost(self, app, areas):
         add_unit(rentamount=20000, latitude=-1.373, longitude=36.817, address="South B")
-        # works in Westlands, so South B is a real trip away
         renter = renter_with(monthlyincome=80000, workplace="Westlands", workplacearea="Westlands",
                              workplace_lat=-1.2676, workplace_lng=36.8108)
         entry = services.recommend(renter)["picks"][0]
         assert entry["distance_km"] > 5
-        assert entry["monthly_commute"] > 0
-        assert entry["total_monthly"] == 20000 + entry["monthly_commute"]
-        assert any("a month to travel" in r for r in entry["reasons"])
+        assert "monthly_commute" not in entry
+        assert any("km from" in r for r in entry["reasons"])
+        assert not any("KSh" in r and "travel" in r for r in entry["reasons"])
+
+    def test_a_whole_county_can_be_the_preferred_place(self, app, areas):
+        db.session.add(Area(name="Ruaka", city="Nairobi", county="Kiambu", latitude=-1.2064, longitude=36.7842))
+        db.session.commit()
+        add_unit(rentamount=20000, address="Ruaka", title="Kiambu flat", room_number="K",
+                 area_id=Area.query.filter_by(name="Ruaka").one().area_id)
+        add_unit(rentamount=20000, address="Westlands", title="Nairobi flat", room_number="N")
+        renter = renter_with(budgetrange="30000", preferredlocation="Kiambu County", preferred_county="Kiambu")
+        result = services.recommend(renter)
+        assert result["picks"][0]["listing"].title == "Kiambu flat"
+        assert result["picks"][0]["in_pref"] is True
+
+    def test_any_place_picked_on_the_map_can_be_the_preferred_place(self, app, areas):
+        add_unit(rentamount=20000, title="Next to the mall", latitude=-1.2610, longitude=36.8030, room_number="A")
+        add_unit(rentamount=20000, title="Far away", latitude=-1.40, longitude=36.95, room_number="B")
+        renter = renter_with(budgetrange="30000", preferredlocation="Sarit Centre",
+                             preferred_lat=-1.2603, preferred_lng=36.8019)
+        picks = services.recommend(renter)["picks"]
+        assert picks[0]["listing"].title == "Next to the mall"
+        assert picks[0]["in_pref"] is True
 
     def test_the_bedroom_filter_applies(self, app, areas):
         add_unit(rentamount=20000, bedrooms=1, room_number="1")
@@ -114,7 +133,7 @@ class TestAnalyserPage:
         page = client.post("/insights/budget", data={
             "monthlyincome": "80000", "preferredlocation": "zzzzqqq", "commute_mode": "matatu",
         }, follow_redirects=True).get_data(as_text=True)
-        assert "know a neighbourhood called" in page.replace("&#34;", '"')
+        assert "could not find" in page and "zzzzqqq" in page
 
     def test_a_bad_income_is_reported(self, client, app, areas):
         make_user("r@example.com", "Renter")
@@ -123,3 +142,30 @@ class TestAnalyserPage:
             "monthlyincome": "lots", "commute_mode": "matatu",
         }, follow_redirects=True).get_data(as_text=True)
         assert "has to be a number" in page
+
+
+class TestNoTripCostOnScreen:
+    FORM = {
+        "monthlyincome": "80000", "workplace": "Westlands", "workplace_lat": "-1.2676",
+        "workplace_lng": "36.8108", "commute_mode": "matatu",
+    }
+
+    def test_the_analyser_page_shows_distance_not_cost(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        add_unit(rentamount=20000, latitude=-1.373, longitude=36.817, address="South B")
+        client.post("/insights/budget", data=self.FORM)
+        page = client.get("/insights/budget").get_data(as_text=True)
+        assert "km from" in page
+        assert "Real monthly cost" not in page
+        assert "Trip cost" not in page
+
+    def test_the_listing_page_shows_distance_and_a_map_target(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(rentamount=20000, latitude=-1.373, longitude=36.817, address="South B")
+        client.post("/insights/budget", data=self.FORM)
+        page = client.get(f"/listings/{unit.listing_id}").get_data(as_text=True)
+        assert "data-target=" in page
+        assert "from Westlands" in page
+        assert "Trip cost" not in page

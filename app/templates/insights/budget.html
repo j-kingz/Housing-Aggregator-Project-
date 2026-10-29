@@ -42,14 +42,18 @@
 
       <h6 class="mb-3 mt-4"><span class="step-badge">2</span>Where you want to live</h6>
       <div class="mb-3">
-        <label class="form-label" for="preferredlocation">Neighbourhood</label>
+        <label class="form-label" for="preferredlocation">County, neighbourhood or place</label>
         <div class="input-group">
           <span class="input-group-text"><i class="bi bi-signpost-split"></i></span>
           <input type="text" id="preferredlocation" name="preferredlocation" class="form-control"
-                 placeholder="Start typing, e.g. Kilimani" value="{{ renter.preferredlocation or '' }}"
-                 data-suggest="area" data-require-match>
+                 placeholder="Start typing, e.g. Kilimani, Kiambu or Sarit Centre" value="{{ renter.preferredlocation or '' }}"
+                 data-suggest="place" data-google data-require-match
+                 data-lat="#preferred_lat" data-lng="#preferred_lng" data-county-field="#preferred_county">
         </div>
-        <div class="form-text">Optional. Leave it empty to see homes everywhere.</div>
+        <input type="hidden" id="preferred_lat" name="preferred_lat" value="{{ renter.preferred_lat or '' }}">
+        <input type="hidden" id="preferred_lng" name="preferred_lng" value="{{ renter.preferred_lng or '' }}">
+        <input type="hidden" id="preferred_county" name="preferred_county" value="{{ renter.preferred_county or '' }}">
+        <div class="form-text">Pick from the list (it works like Google Maps). Leave it empty to see homes everywhere.</div>
       </div>
 
       <h6 class="mb-3 mt-4"><span class="step-badge">3</span>Work or school</h6>
@@ -65,7 +69,7 @@
         <input type="hidden" id="workplace_lat" name="workplace_lat" value="{{ renter.workplace_lat or '' }}">
         <input type="hidden" id="workplace_lng" name="workplace_lng" value="{{ renter.workplace_lng or '' }}">
         <input type="hidden" id="workplace_area_id" name="workplace_area_id" value="{{ renter.workplace_area_id or '' }}">
-        <div class="form-text">Pick it from the list. We use it to work out the travel cost.</div>
+        <div class="form-text">Pick it from the list. We use it to show how far each home is.</div>
       </div>
       <div class="mb-4">
         <label class="form-label" for="commute_mode">How do you travel?</label>
@@ -159,12 +163,6 @@
               {% else %}<span class="badge text-bg-light border ms-auto">Not confirmed</span>{% endif %}
             </div>
 
-            {% if m.monthly_commute %}
-            <div class="small mb-2">
-              <strong>Real monthly cost: KSh {{ "{:,.0f}".format(m.total_monthly) }}</strong>
-              <span class="text-muted">(rent + about KSh {{ "{:,.0f}".format(m.monthly_commute) }} travel)</span>
-            </div>
-            {% endif %}
 
             <ul class="small text-muted ps-3 mb-2">
               {% for reason in m.reasons[:4] %}<li>{{ reason }}</li>{% endfor %}
@@ -188,9 +186,9 @@
 
       {% if target_point and points %}
       <div class="panel p-3 mb-4">
-        <h6 class="mb-2"><i class="bi bi-map me-1"></i> Where they are compared with {{ target_point.label }}</h6>
+        <h6 class="mb-2"><i class="bi bi-map me-1"></i> How far each home is from {{ target_point.label }}</h6>
         <div class="ha-map" data-points='{{ points|tojson }}' data-target='{{ target_point|tojson }}'></div>
-        <p class="text-muted small mt-2 mb-0">The orange dot is your work or school. Distances are straight lines, not road distance.</p>
+        <p class="text-muted small mt-2 mb-0">The orange dot is your work or school. Each dashed line shows the straight-line distance, not the road distance.</p>
       </div>
       {% endif %}
 

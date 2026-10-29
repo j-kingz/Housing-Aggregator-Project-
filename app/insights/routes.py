@@ -7,6 +7,7 @@ from app.analytics import services as analytics
 from app.extensions import db
 from app.insights import services
 from app.models import Area, Property
+from app.counties import find_county
 from app.places.services import resolve_area
 
 insights_bp = Blueprint("insights", __name__, url_prefix="/insights")
@@ -50,14 +51,27 @@ def _save_profile(renter, form):
     else:
         renter.budgetrange = None
 
+    # where they want to live: a neighbourhood, a county or any place in Kenya
     preferred = form.get("preferredlocation", "").strip()
+    renter.preferred_lat = renter.preferred_lng = renter.preferred_county = None
     if preferred:
         area, _ = resolve_area(preferred)
-        if area is None:
-            problems.append(f"We don't know a neighbourhood called \"{preferred}\". Pick one from the list.")
-            preferred = ""
-        else:
+        county_hit = find_county(form.get("preferred_county") or preferred)
+        try:
+            lat, lng = float(form.get("preferred_lat", "")), float(form.get("preferred_lng", ""))
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                renter.preferred_lat, renter.preferred_lng = lat, lng
+        except ValueError:
+            pass
+        if county_hit:
+            renter.preferred_county = county_hit[0]
+        elif area is not None:
             preferred = area.name
+        elif renter.preferred_lat is None:
+            problems.append(
+                f"We could not find \"{preferred}\" in Kenya. Pick a county, neighbourhood or place from the suggestions."
+            )
+            preferred = ""
     renter.preferredlocation = preferred or None
 
     renter.commute_mode = form.get("commute_mode", "matatu").strip() or "matatu"
@@ -87,7 +101,7 @@ def _save_profile(renter, form):
             renter.workplacearea = area.name
         if renter.workplace_lat is None and area is None:
             problems.append(
-                f"We could not place \"{workplace}\" on the map, so travel costs cannot be worked out. "
+                f"We could not place \"{workplace}\" on the map, so the distance cannot be worked out. "
                 "Pick it from the suggestions."
             )
     return problems
@@ -100,8 +114,7 @@ def budget():
 
     The renter says what they earn, what they can pay, where they want to live
     and where they work. The page answers with the homes they can go for, each
-    with the reasons, the real monthly cost including travel, and which unit is
-    vacant.
+    with the reasons, the distance to work, and which unit is vacant.
     """
     renter = _renter()
     if renter is None:
