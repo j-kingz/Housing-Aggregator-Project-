@@ -22,18 +22,19 @@ a vacant unit with M-Pesa.
 2. **Cleaner**: turns "KSh 28,000", "1bdrm", "110 m²" into numbers, converts dollar adverts, reads GPS from Plus Codes.
 3. **Database**: one `properties` table holds every unit with building, floor, unit number, vacancy and GPS.
 4. **Analytics**: average rent per neighbourhood; each listing is labelled cheap, fair or expensive (needs 3+ homes in the area).
-5. **Insights**: "What can I afford?" ranks homes by rent + travel cost against income (30% comfortable, 40% stretch).
+5. **Insights**: "What can I afford?" ranks open homes by rent against income (30% comfortable, 40% stretch), preferred place and distance to work.
 6. **Notifications**: a saved search creates a message when the scraper finds a match.
 7. **Payments**: M-Pesa STK push for a reservation deposit; the unit becomes "Reserved".
 
 ## Demo script (about 8 minutes)
 
 1. **Home** `/`: point out the counts, the photos, and the building / floor / unit / vacant strip on each card.
-2. **Suggestions**: type `westlnds` in Neighbourhood. It suggests Westlands and corrects the typo. Type `river` in Where to see buildings.
-3. **A listing**: open one. Show the map and GPS ("Exact point" or "Approximate"), the fair-price label, "See the original listing".
+2. **Suggestions**: type `nairobi` in Where: the county comes first, then its neighbourhoods. Type `strathmore` to see a place anywhere in Kenya. Pick a county, then open Neighbourhood: it only lists areas in that county. Type `westlnds` and see the typo corrected.
+   **Tabs and map**: press *Vacant only*, then point at the map holding every matching home. Press a heart to save a home (log in first).
+3. **A listing**: open one. Show the map and GPS ("Exact point" or "Approximate"), the fair-price label. Open one marked *Not confirmed*: the page explains how to reach the agent through the original listing.
 4. **Building page**: from a unit with a building, open the building to see floors and which units are vacant.
 5. **Rent prices** `/analytics/`: charts by neighbourhood, bedrooms and trend.
-6. **Register as a renter**, open **What can I afford?**: enter income 90000, a neighbourhood and your workplace. Show the ranked homes, the reasons and the real monthly cost.
+6. **Register as a renter**, open **What can I afford?**: enter income 90000, pick where you want to live and where you work (both work like a map search). Show the ranked homes, the reasons, and the dashed distance lines on the map.
 7. **Reserve with M-Pesa** on a vacant unit. In demo mode a banner says no money moves, and the payment confirms after a few seconds.
 8. **Admin** (run `python create_admin.py` first): Sources (turn a site on or off), "Run now", **Scraping runs** history, Listings.
 9. **Landlord**: add a listing, press "Use my current location".
@@ -45,15 +46,15 @@ a vacant unit with M-Pesa.
 - **How do you handle duplicates?** Listings are never merged, so units in one building stay separate. Only the same advert from the same site is refreshed.
 - **How accurate is the GPS?** Exact when an advert gives a Plus Code or a landlord sets it; otherwise it is the neighbourhood centre and is labelled "approximate".
 - **How is "fair price" decided?** Compared with the neighbourhood average, cheap/expensive beyond a threshold; it says "not enough data" below 3 homes.
-- **Are the travel costs exact?** No. They are estimates from typical fares and speeds, and the interface says so.
+- **How are distances shown?** As straight lines on the map with the kilometres written on them, not road distances. Travel cost is not shown.
 - **Is M-Pesa real?** The Daraja STK push, callback (secured with a secret token and amount check) and status query are implemented. Without Safaricom keys it runs in demo mode.
 - **What about security?** Passwords are hashed (scrypt), forms have CSRF protection, role checks protect pages, and `.env` secrets are not in the repository.
 - **What are the limits?** Listings are only as good as the source sites. Some adverts have no unit number. BuyRentKenya is not readable. No password-reset email.
-- **Demo data:** the "Sample fixture" listings are bundled demo data. Filter by Source to show only real scraped sites.
+- **Is any data made up?** No. Every listing is scraped from a real site (and links to it) or added by a landlord.
 
 ## Before you present
 
-1. Start MySQL, run `python init_db.py`, then `python -m scraper.cli run` for fresh listings.
+1. Start MySQL, run `python init_db.py`, then `python -m scraper.cli run` for fresh listings (internet needed).
 2. `python run.py`, open http://127.0.0.1:5000.
 3. Have an account ready for each role (renter, landlord, admin).
 4. If the internet is unavailable, the site still works with the stored listings (maps need internet).

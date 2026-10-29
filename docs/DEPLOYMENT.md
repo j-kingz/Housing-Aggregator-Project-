@@ -10,10 +10,10 @@
    .\venv\Scripts\python.exe init_db.py
    ```
 
-4. Optionally load the bundled sample listings:
+4. Fetch real listings from the websites (takes a few minutes):
 
    ```powershell
-   .\venv\Scripts\python.exe -m scraper.cli import-fixture
+   .env\Scripts\python.exe -m scraper.cli run
    ```
 
 5. Start the web application:

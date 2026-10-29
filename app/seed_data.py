@@ -140,14 +140,4 @@ DEFAULT_SOURCES = [
         "respects_robots": True,
         "notes": "Classifieds site, about 10 apartments a page. robots.txt allows these pages.",
     },
-    {
-        "name": "Sample fixture",
-        "base_url": "",
-        "listing_url": "",
-        "profile": "fixture",
-        "delay_seconds": 0.0,
-        "max_pages": 1,
-        "respects_robots": False,
-        "notes": "Offline sample page bundled with the project, used for demos and tests.",
-    },
 ]

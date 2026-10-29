@@ -13,7 +13,7 @@ compares each rent with its neighbourhood, and helps a renter work out what they
 
 | For | What you get |
 |-----|--------------|
-| **Renters** | Search with place suggestions that fix typing mistakes. Every result shows building, floor, unit and whether it is vacant, with its GPS point on a map. A "fair price" label compares each rent with the area. **What can I afford?** ranks homes from your income and workplace, with the real monthly cost including travel. Saved searches notify you of new matches. A vacant unit can be reserved with an **M-Pesa** deposit. |
+| **Renters** | Search any place in Kenya: the Where box suggests counties first, then the neighbourhoods inside them, then buildings and places (like a map search) and fixes typing mistakes. Every result shows building, floor, unit and whether it is vacant. A map shows every matching home, and a Vacant only tab lists the free ones. If a unit is not confirmed, the page sends you to the original advert to reach the agent. Hearts save homes to a Saved homes page. A "fair price" label compares each rent with the area. **What can I afford?** ranks homes from your income, where you want to live and where you work, and shows how far each is on a map. Saved searches notify you of new matches. A vacant unit can be reserved with an **M-Pesa** deposit. |
 | **Landlords** | Add units with building, floor, room, vacancy and an exact GPS point (use the phone's location, search a place or click the map). See deposits paid for their units. |
 | **Administrators** | Turn scraping sources on and off, run a scrape, read the history of every run, manage users and listings. |
 
@@ -45,7 +45,7 @@ python run.py                 # start the site
 
 Then open **http://127.0.0.1:5000**. On Windows you can also double-click `start.bat`.
 
-To get listings without the internet, run `python -m scraper.cli import-fixture` for bundled demo data (labelled "Sample fixture" in the Source filter).
+Only real listings are used: scraped from the websites above, or added by landlords. There is no demo data.
 
 ### Docker
 
@@ -59,7 +59,7 @@ Starts MySQL, the website (http://127.0.0.1:5000) and the scraper worker as thre
 
 Both are set in `.env` (see `.env.example`). The site works without either.
 
-- **Google Maps:** put a key in `GOOGLE_MAPS_API_KEY` (enable "Maps JavaScript API" and "Places API (New)", and restrict the key to your local address). It adds Google place suggestions to the search boxes. Without it the site suggests neighbourhoods and buildings from its own data and shows OpenStreetMap maps.
+- **Google Maps:** put a key in `GOOGLE_MAPS_API_KEY` (enable "Maps JavaScript API" and "Places API (New)", and restrict the key to your local address). It adds Google place suggestions to the search boxes. Without it the site still suggests every county, neighbourhood and building from its own data, and other places across Kenya from OpenStreetMap (Photon, a free service, so it needs internet), and shows OpenStreetMap maps.
 - **M-Pesa:** register at https://developer.safaricom.co.ke and fill in the `MPESA_*` values. Safaricom must be able to reach your callback, so run a tunnel such as ngrok and set `MPESA_CALLBACK_BASE_URL`. With no keys the payment flow runs in a clearly labelled **demo mode** where no money moves.
 
 ## Where the data is stored
@@ -75,6 +75,7 @@ Everything is in the MySQL database `housing_aggregator_db` (open it in MySQL Wo
 | `user`, `renter_details`, `landlord_details`, `role` | Accounts (passwords are stored hashed) |
 | `search_alert`, `notification` | Saved searches and the messages they produce |
 | `payment` | M-Pesa deposits |
+| `favorite` | Homes people saved with the heart |
 | `market_snapshot` | Daily average rents, used for trends |
 
 In the website, administrators see the same data under **Admin**: Sources, Listings and Scraping runs. Example query: `SELECT source_name, COUNT(*) FROM properties GROUP BY source_name;`

@@ -47,7 +47,7 @@ Before committing a release:
 
 1. Run the full test suite.
 2. Load a clean database using `init_db.py`.
-3. Import the sample fixture or run an approved source.
+3. Run the scraper against the live sources (`python -m scraper.cli run`).
 4. Check the lowest and highest rents for obvious parsing errors.
 5. Open `/`, `/analytics/`, and an area analysis page.
 6. Confirm that no listing has a price-only title or unsafe source URL.

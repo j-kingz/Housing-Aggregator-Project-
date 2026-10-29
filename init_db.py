@@ -120,6 +120,28 @@ def clean_bad_unit_numbers():
     return len(rows)
 
 
+def remove_sample_data():
+    """Delete the old bundled demo listings so only real scraped or landlord listings remain."""
+    from app.models import Favorite, Notification, Payment, Property, ScrapingRun
+
+    sample = ScrapingSource.query.filter_by(name="Sample fixture").first()
+    ids = [
+        row.listing_id
+        for row in Property.query.filter(Property.source_name == "Sample fixture").all()
+    ]
+    if ids:
+        # anything that points at those listings goes first
+        Notification.query.filter(Notification.listing_id.in_(ids)).delete(synchronize_session=False)
+        Favorite.query.filter(Favorite.listing_id.in_(ids)).delete(synchronize_session=False)
+        Payment.query.filter(Payment.listing_id.in_(ids)).delete(synchronize_session=False)
+        Property.query.filter(Property.listing_id.in_(ids)).delete(synchronize_session=False)
+    if sample is not None:
+        ScrapingRun.query.filter_by(source_id=sample.source_id).delete(synchronize_session=False)
+        db.session.delete(sample)
+    db.session.commit()
+    return len(ids)
+
+
 def add_sources():
     """Register the default scraping sources."""
     added = 0
@@ -162,6 +184,9 @@ if __name__ == "__main__":
         roles = add_roles()
         areas = add_areas()
         sources = add_sources()
+        removed_sample = remove_sample_data()
+        if removed_sample:
+            print(f"  sample listings removed: {removed_sample}")
         refresh_listing_gps()
         cleaned_units = clean_bad_unit_numbers()
         if cleaned_units:
