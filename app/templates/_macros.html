@@ -77,3 +77,12 @@
   {% if hint %}<p class="small mb-0">{{ hint }}</p>{% endif %}
 </div>
 {%- endmacro %}
+
+
+{# A listing photo that hides itself if the source site stops serving it #}
+{% macro photo(listing, css='listing-photo') -%}
+{%- if listing.image_url -%}
+<img class="{{ css }}" src="{{ listing.image_url }}" alt="{{ listing.title }}" loading="lazy"
+     referrerpolicy="no-referrer" onerror="this.remove()">
+{%- endif -%}
+{%- endmacro %}
