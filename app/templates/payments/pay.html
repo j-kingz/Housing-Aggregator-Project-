@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Reserve with M-Pesa{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 560px;">
+  <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="small text-decoration-none">
+    <i class="bi bi-arrow-left"></i> Back to the listing
+  </a>
+
+  <div class="panel p-4 mt-2">
+    <h4 class="mb-1"><i class="bi bi-phone me-2"></i>Reserve this unit</h4>
+    <p class="text-muted">Pay a small deposit with M-Pesa so nobody else takes the unit while you view it.</p>
+
+    {% if demo %}
+      <div class="alert alert-warning small">
+        <strong>Demo mode.</strong> M-Pesa is not connected yet, so no real request is sent and no money moves.
+        Add your Safaricom Daraja keys to <code>.env</code> to take real payments.
+      </div>
+    {% endif %}
+
+    <div class="border rounded p-3 mb-3 bg-light">
+      <div class="fw-semibold">{{ listing.title }}</div>
+      <div class="text-muted small">
+        {% if listing.building_name %}{{ listing.building_name }}{% endif %}
+        {% if listing.floor_number is not none %} &middot; Floor {{ listing.floor_number }}{% endif %}
+        {% if listing.room_number %} &middot; Unit {{ listing.room_number }}{% endif %}
+        {% if not (listing.building_name or listing.floor_number is not none or listing.room_number) %}
+          {{ listing.address }}{% if listing.city %}, {{ listing.city }}{% endif %}
+        {% endif %}
+      </div>
+      <hr class="my-2">
+      <div class="d-flex justify-content-between"><span>Monthly rent</span><span>KSh {{ "{:,.0f}".format(listing.rentamount) }}</span></div>
+      <div class="d-flex justify-content-between fw-semibold fs-5"><span>Deposit to pay now</span><span>KSh {{ "{:,.0f}".format(amount) }}</span></div>
+    </div>
+
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-label" for="phone">Your M-Pesa phone number</label>
+      <div class="input-group mb-1">
+        <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+        <input type="tel" id="phone" name="phone" class="form-control" placeholder="0712 345 678"
+               value="{{ phone }}" required autocomplete="tel">
+      </div>
+      <div class="form-text mb-3">A prompt appears on this phone. Enter your M-Pesa PIN to approve.</div>
+      <button class="btn btn-success w-100 py-2"><i class="bi bi-check2-circle me-1"></i> Pay KSh {{ "{:,.0f}".format(amount) }} with M-Pesa</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

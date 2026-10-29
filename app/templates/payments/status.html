@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Payment{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 560px;">
+  <div class="panel p-4 text-center" id="payBox" data-status-url="{{ url_for('payments.status_json', payment_id=payment.payment_id) }}"
+       data-state="{{ payment.status }}">
+
+    <div id="statePending" {% if payment.status != 'pending' %}hidden{% endif %}>
+      <div class="spinner-border text-success mb-3" role="status"></div>
+      <h4>Check your phone</h4>
+      <p class="text-muted mb-1">
+        {% if payment.simulated %}
+          Demo mode: confirming the payment automatically&hellip;
+        {% else %}
+          An M-Pesa prompt for <strong>KSh {{ "{:,.0f}".format(payment.amount) }}</strong> was sent to
+          <strong>{{ payment.phone }}</strong>. Enter your PIN to approve.
+        {% endif %}
+      </p>
+      <p class="small text-muted">This page updates by itself.</p>
+      <form method="post" action="{{ url_for('payments.cancel', payment_id=payment.payment_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if current_user.user_id == payment.renter_id %}
+          <button class="btn btn-sm btn-outline-secondary">Cancel</button>
+        {% endif %}
+      </form>
+    </div>
+
+    <div id="statePaid" {% if payment.status != 'paid' %}hidden{% endif %}>
+      <div class="display-4 text-success mb-2"><i class="bi bi-check-circle-fill"></i></div>
+      <h4>Unit reserved</h4>
+      <p class="mb-1">KSh {{ "{:,.0f}".format(payment.amount) }} received.</p>
+      <p class="text-muted small">M-Pesa receipt: <strong id="receipt">{{ payment.mpesa_receipt or '' }}</strong></p>
+      {% if payment.simulated %}<p class="badge text-bg-warning">Demo payment, no real money moved</p>{% endif %}
+    </div>
+
+    <div id="stateFailed" {% if payment.status not in ('failed', 'cancelled') %}hidden{% endif %}>
+      <div class="display-4 text-danger mb-2"><i class="bi bi-x-circle-fill"></i></div>
+      <h4 id="failTitle">{{ 'Payment cancelled' if payment.status == 'cancelled' else 'Payment not completed' }}</h4>
+      <p class="text-muted" id="failReason">{{ payment.result_desc or '' }}</p>
+      {% if listing %}
+        <a class="btn btn-success" href="{{ url_for('payments.pay', listing_id=listing.listing_id) }}">Try again</a>
+      {% endif %}
+    </div>
+
+    {% if listing %}
+    <hr>
+    <div class="text-start small">
+      <div class="fw-semibold">{{ listing.title }}</div>
+      <div class="text-muted">
+        {% if listing.building_name %}{{ listing.building_name }}{% endif %}
+        {% if listing.floor_number is not none %} &middot; Floor {{ listing.floor_number }}{% endif %}
+        {% if listing.room_number %} &middot; Unit {{ listing.room_number }}{% endif %}
+      </div>
+      <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}">View the unit</a>
+      &middot; <a href="{{ url_for('payments.history') }}">All payments</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  (function () {
+    const box = document.getElementById('payBox');
+    if (box.dataset.state !== 'pending') return;
+    const show = id => {
+      ['statePending', 'statePaid', 'stateFailed'].forEach(s => document.getElementById(s).hidden = (s !== id));
+    };
+    const timer = setInterval(async () => {
+      try {
+        const r = await fetch(box.dataset.statusUrl, {headers: {'Accept': 'application/json'}});
+        const d = await r.json();
+        if (d.status === 'paid') {
+          document.getElementById('receipt').textContent = d.receipt || '';
+          show('statePaid'); clearInterval(timer);
+        } else if (d.status === 'failed' || d.status === 'cancelled') {
+          document.getElementById('failReason').textContent = d.message || '';
+          document.getElementById('failTitle').textContent = d.status === 'cancelled' ? 'Payment cancelled' : 'Payment not completed';
+          show('stateFailed'); clearInterval(timer);
+        }
+      } catch (e) { /* try again on the next tick */ }
+    }, 3000);
+  })();
+</script>
+{% endblock %}

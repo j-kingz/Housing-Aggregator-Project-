@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_state %}
+{% block title %}Payments{% endblock %}
+{% block content %}
+<h3 class="mb-1">{{ 'Payments received' if mode == 'received' else ('All payments' if mode == 'all' else 'My payments') }}</h3>
+<p class="text-muted">
+  {% if mode == 'received' %}Reservation deposits paid for your units.
+  {% else %}Reservation deposits paid with M-Pesa.{% endif %}
+</p>
+
+<div class="panel table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr><th class="ps-4">Unit</th><th>Date</th><th class="text-end">Amount</th><th>Receipt</th><th class="pe-4">Status</th></tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+      <tr>
+        <td class="ps-4">
+          <a class="fw-medium text-decoration-none" href="{{ url_for('payments.status', payment_id=p.payment_id) }}">{{ p.listing.title }}</a>
+          <span class="text-muted small d-block">
+            {{ p.listing.building_name or p.listing.address }}
+            {% if p.listing.floor_number is not none %} &middot; Floor {{ p.listing.floor_number }}{% endif %}
+            {% if p.listing.room_number %} &middot; Unit {{ p.listing.room_number }}{% endif %}
+          </span>
+        </td>
+        <td>{{ p.created_at.strftime('%d %b %Y %H:%M') if p.created_at else '-' }}</td>
+        <td class="text-end">KSh {{ "{:,.0f}".format(p.amount) }}</td>
+        <td>{{ p.mpesa_receipt or '-' }}{% if p.simulated %} <span class="badge text-bg-warning">demo</span>{% endif %}</td>
+        <td class="pe-4">
+          {% if p.status == 'paid' %}<span class="badge text-bg-success">Paid</span>
+          {% elif p.status == 'pending' %}<span class="badge text-bg-warning">Waiting</span>
+          {% elif p.status == 'cancelled' %}<span class="badge text-bg-secondary">Cancelled</span>
+          {% else %}<span class="badge text-bg-danger">Failed</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">{{ empty_state('bi-phone', 'No payments yet.', 'Reserve a vacant unit from its page to pay a deposit with M-Pesa.') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
