@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_icon, location, verdict_badge %}
+{% from "_macros.html" import category_icon, location, verdict_badge, photo %}
 {% block title %}{{ listing.title }}{% endblock %}
 {% block content %}
 <a href="{{ url_for('main.home') }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Back to search</a>
@@ -7,28 +7,46 @@
 <div class="row g-4 mt-1">
   <div class="col-lg-8">
     <div class="panel">
-      <div class="detail-banner">{{ category_icon(listing.category) }}</div>
+      <div class="detail-banner">{{ category_icon(listing.category) }}{{ photo(listing, 'detail-photo') }}</div>
+      {% if listing.image_url %}<div class="photo-credit">Photo from {{ listing.source_name or 'the original advert' }}</div>{% endif %}
       <div class="p-4">
         {% if listing.category %}
           <span class="badge rounded-pill text-bg-light border mb-2">{{ listing.category }}</span>
         {% endif %}
         <h2 class="mb-1">{{ listing.title }}</h2>
         <p class="text-muted mb-3"><i class="bi bi-geo-alt me-1"></i>{{ location(listing) }}</p>
-        {% if listing.building_name or listing.floor_number is not none or listing.room_number %}
-          <div class="alert alert-light border mb-3">
-            <i class="bi bi-building me-1"></i>
-            <strong>{{ listing.building_name or 'Building not specified' }}</strong>
-            {% if listing.floor_number is not none %} · Floor {{ listing.floor_number }}{% endif %}
-            {% if listing.room_number %} · Room {{ listing.room_number }}{% endif %}
-            {% if listing.availability_status == 'vacant' %}
-              <span class="badge text-bg-success ms-2">Vacant</span>
-            {% elif listing.availability_status == 'occupied' %}
-              <span class="badge text-bg-secondary ms-2">Occupied</span>
-            {% else %}
-              <span class="badge text-bg-warning ms-2">Availability unknown</span>
-            {% endif %}
+        <div class="alert alert-light border mb-3">
+          <div class="row g-3 align-items-center">
+            <div class="col-sm-4">
+              <div class="text-muted small">Building</div>
+              <div class="fw-semibold">
+                {% if listing.building_name %}
+                  <a class="text-decoration-none" href="{{ url_for('listings.building', name=listing.building_name) }}">{{ listing.building_name }}</a>
+                {% else %}<span class="text-muted fw-normal">Not given</span>{% endif %}
+              </div>
+            </div>
+            <div class="col-6 col-sm-2">
+              <div class="text-muted small">Floor</div>
+              <div class="fw-semibold">{{ listing.floor_number if listing.floor_number is not none else '-' }}</div>
+            </div>
+            <div class="col-6 col-sm-2">
+              <div class="text-muted small">Unit</div>
+              <div class="fw-semibold">{{ listing.room_number or '-' }}</div>
+            </div>
+            <div class="col-sm-4">
+              <div class="text-muted small">Right now</div>
+              {% if listing.availability_status == 'vacant' %}
+                <span class="badge text-bg-success fs-6"><i class="bi bi-check-circle me-1"></i>Vacant</span>
+              {% elif listing.availability_status == 'reserved' %}
+                <span class="badge text-bg-warning fs-6">Reserved</span>
+              {% elif listing.availability_status == 'occupied' %}
+                <span class="badge text-bg-secondary fs-6">Occupied</span>
+              {% else %}
+                <span class="badge text-bg-light border fs-6">Not confirmed</span>
+              {% endif %}
+            </div>
           </div>
-        {% endif %}
+        </div>
 
         <div class="mb-3">
           {{ verdict_badge(verdict) }}
@@ -81,6 +99,40 @@
               <div class="value">{{ listing.listingdate.strftime('%d %b %Y') if listing.listingdate else '-' }}</div>
             </div>
           </div>
+        </div>
+
+        {% if units|length > 1 %}
+        <div class="mt-4">
+          <h6 class="small text-uppercase text-muted fw-semibold">Other units in {{ listing.building_name }}</h6>
+          <div class="d-flex flex-wrap gap-2">
+            {% for u in units %}{% if u.listing_id != listing.listing_id %}
+              <a class="unit-chip unit-{{ u.availability_status if u.availability_status in ('vacant', 'reserved', 'occupied') else 'unknown' }}"
+                 href="{{ url_for('listings.detail', listing_id=u.listing_id) }}">
+                <strong>{{ 'Floor ' ~ u.floor_number if u.floor_number is not none else 'Floor ?' }} &middot; {{ u.room_number or '?' }}</strong>
+                <small>KSh {{ "{:,.0f}".format(u.rentamount) }} &middot; {{ 'Vacant' if u.availability_status == 'vacant' else ('Reserved' if u.availability_status == 'reserved' else ('Occupied' if u.availability_status == 'occupied' else 'Not confirmed')) }}</small>
+              </a>
+            {% endif %}{% endfor %}
+          </div>
+          <a class="small" href="{{ url_for('listings.building', name=listing.building_name) }}">See the whole building floor by floor &rarr;</a>
+        </div>
+        {% endif %}
+
+        <div class="mt-4">
+          <h6 class="small text-uppercase text-muted fw-semibold"><i class="bi bi-geo-alt me-1"></i>Where it is</h6>
+          {% if listing.latitude is not none %}
+            <div class="ha-map mb-2"
+                 data-points='{{ [{"lat": listing.latitude|float, "lng": listing.longitude|float, "label": listing.title}]|tojson }}'></div>
+            <div class="small text-muted">
+              GPS {{ "%.6f"|format(listing.latitude|float) }}, {{ "%.6f"|format(listing.longitude|float) }}
+              {% if listing.gps_exact %}
+                <span class="badge text-bg-success ms-1">Exact point</span>
+              {% else %}
+                <span class="badge text-bg-warning ms-1">Approximate, centre of {{ listing.address or 'the area' }}</span>
+              {% endif %}
+            </div>
+          {% else %}
+            <p class="text-muted small mb-0">No GPS point is known for this unit yet.</p>
+          {% endif %}
         </div>
 
         {% if insight and (insight.rent_to_income or insight.commute) %}
@@ -145,6 +197,16 @@
         </div>
       </div>
 
+      {% if listing.availability_status == 'reserved' %}
+        <div class="alert alert-warning small py-2">This unit has been reserved by a renter.</div>
+      {% elif can_reserve and current_user.is_authenticated and current_user.is_renter %}
+        <a href="{{ url_for('payments.pay', listing_id=listing.listing_id) }}" class="btn btn-success w-100 mb-2">
+          <i class="bi bi-phone me-1"></i> Reserve with M-Pesa
+        </a>
+      {% elif can_reserve and not current_user.is_authenticated %}
+        <a href="{{ url_for('auth.login') }}" class="btn btn-outline-success w-100 mb-2">Log in to reserve with M-Pesa</a>
+      {% endif %}
+
       {% if listing.source_url and listing.source_url.startswith(('http://', 'https://')) %}
         <a href="{{ listing.source_url }}" class="btn btn-outline-primary w-100 mb-2" target="_blank" rel="noopener noreferrer">
           <i class="bi bi-box-arrow-up-right me-1"></i> See the original listing
@@ -158,9 +220,9 @@
       {% endif %}
       {% if listing.latitude and listing.longitude %}
       <a class="btn btn-outline-secondary w-100 mb-2"
-         href="https://www.google.com/maps/search/?api=1&query={{ listing.latitude }},{{ listing.longitude }}"
+         href="https://www.google.com/maps/dir/?api=1&destination={{ listing.latitude }},{{ listing.longitude }}"
          target="_blank" rel="noopener noreferrer">
-        <i class="bi bi-map me-1"></i> Open location in Google Maps
+        <i class="bi bi-map me-1"></i> Get directions
       </a>
       {% endif %}
 

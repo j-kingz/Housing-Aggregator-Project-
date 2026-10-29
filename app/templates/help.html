@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}How it works{% endblock %}
+
+{% block hero %}
+<section class="hero hero-compact">
+  <div class="container">
+    <h1 class="mb-2">How it works</h1>
+    <p class="mb-0">Finding a home in Nairobi, in four simple steps.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-md-3 how-step">
+    <span class="icon-box"><i class="bi bi-search"></i></span>
+    <h6>1. Find a home</h6>
+    <p class="small text-muted">Type a place or building. Suggestions appear as you type, so you never need to spell it perfectly. Homes from several sites are shown together.</p>
+  </div>
+  <div class="col-md-3 how-step">
+    <span class="icon-box"><i class="bi bi-building"></i></span>
+    <h6>2. See the exact unit</h6>
+    <p class="small text-muted">Each result shows the building, the floor, the unit number and whether it is vacant, with its GPS spot on a map.</p>
+  </div>
+  <div class="col-md-3 how-step">
+    <span class="icon-box"><i class="bi bi-wallet2"></i></span>
+    <h6>3. Check you can afford it</h6>
+    <p class="small text-muted">"What can I afford?" takes your income and workplace and lists the homes you can go for, with the real monthly cost including travel.</p>
+  </div>
+  <div class="col-md-3 how-step">
+    <span class="icon-box"><i class="bi bi-phone"></i></span>
+    <h6>4. Reserve with M-Pesa</h6>
+    <p class="small text-muted">Pay a small deposit from your phone so the unit is held for you while you view it.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="panel p-4 h-100">
+      <h5>For renters</h5>
+      <ol class="mb-0">
+        <li><a href="{{ url_for('auth.register') }}">Create a free account</a> and choose <em>Renter</em>.</li>
+        <li>Use <a href="{{ url_for('main.home') }}">Find a home</a> to search by place, building, floor or price.</li>
+        <li>Open <a href="{{ url_for('insights.budget') }}">What can I afford?</a> to get a personal list.</li>
+        <li>Press <em>Save this search</em> to be told when a matching home is added.</li>
+        <li>Press <em>Reserve with M-Pesa</em> on a vacant unit.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="panel p-4 h-100">
+      <h5>For landlords</h5>
+      <ol class="mb-0">
+        <li>Create an account and choose <em>Landlord</em>.</li>
+        <li>Use <em>Add listing</em>. Pick the neighbourhood from the list.</li>
+        <li>Enter the building, floor and unit number, and mark it vacant or occupied.</li>
+        <li>Press <em>Use my current location</em> while you stand in the building to save its exact GPS point.</li>
+        <li>See the deposits renters pay under <em>Payments received</em>.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div class="panel p-4 mt-4">
+  <h5>Good to know</h5>
+  <ul class="mb-0 small">
+    <li><strong>Where do the homes come from?</strong> Landlords add them here, and a scraper collects public adverts from other sites. Each scraped listing links back to the original advert.</li>
+    <li><strong>Is the price fair?</strong> Each home is compared with the average rent of its neighbourhood. We only compare when at least 3 homes are known in the area.</li>
+    <li><strong>"Approximate" location:</strong> when an advert gives no exact GPS point, we show the centre of the neighbourhood and say so.</li>
+    <li><strong>Travel costs</strong> are estimates from typical Nairobi fares and traffic. They help you compare areas; they are not a route planner.</li>
+  </ul>
+</div>
+{% endblock %}

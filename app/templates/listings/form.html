@@ -2,6 +2,16 @@
 {% block title %}{{ 'Edit listing' if editing else 'Add listing' }}{% endblock %}
 {% block content %}
 <div class="mx-auto" style="max-width: 680px;">
+  <script>
+    /* picking a neighbourhood fills in its city */
+    document.addEventListener('ta-place', function (e) {
+      if (e.target.id === 'address' && e.detail && e.detail.detail) {
+        var city = String(e.detail.detail).split('·')[1];
+        var box = document.getElementById('city');
+        if (city && box && !box.value) box.value = city.trim();
+      }
+    });
+  </script>
   <div class="d-flex align-items-center gap-3 mb-4">
     <span class="icon-box"><i class="bi {{ 'bi-pencil-square' if editing else 'bi-plus-square' }}"></i></span>
     <div>
@@ -54,14 +64,18 @@
 
     <div class="row">
       <div class="col-sm-6 mb-3">
-        <label class="form-label" for="address">Area / estate</label>
-        <input type="text" id="address" name="address" class="form-control" maxlength="150"
-               placeholder="e.g. Kilimani" value="{{ listing.address or '' }}">
+        <label class="form-label" for="address">Neighbourhood *</label>
+        <div class="input-group">
+          <input type="text" id="address" name="address" class="form-control" maxlength="150"
+                 placeholder="Start typing, e.g. Kilimani" value="{{ listing.address or '' }}"
+                 data-suggest="area" data-require-match>
+        </div>
+        <div class="form-text">Pick from the list so the unit appears in the right searches.</div>
       </div>
       <div class="col-sm-6 mb-3">
         <label class="form-label" for="city">City *</label>
         <input type="text" id="city" name="city" class="form-control" maxlength="50"
-               placeholder="e.g. Nairobi" value="{{ listing.city or '' }}" required>
+               placeholder="Filled in for you" value="{{ listing.city or '' }}" required>
       </div>
     </div>
 
@@ -89,6 +103,39 @@
             <option value="{{ key }}" {% if (listing.availability_status or 'unknown') == key %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
+      </div>
+    </div>
+
+    <h6 class="border-top pt-3 mt-2"><i class="bi bi-geo-alt me-1"></i>GPS location of the unit</h6>
+    <p class="text-muted small">
+      Renters see this on a map. For the best result, stand inside the building and press
+      <strong>Use my current location</strong>, or search for the building, or click the map.
+    </p>
+    <div class="mb-3">
+      <label class="form-label" for="place_search">Search for the building or place</label>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="place_search" class="form-control" placeholder="e.g. Sarit Centre"
+               data-suggest="place" data-google data-lat="#latitude" data-lng="#longitude">
+      </div>
+    </div>
+    <div class="mb-2 d-flex flex-wrap gap-2 align-items-center">
+      <button type="button" class="btn btn-outline-primary btn-sm" data-use-location="#gpsStatus">
+        <i class="bi bi-crosshair me-1"></i> Use my current location
+      </button>
+      <span class="small text-muted" id="gpsStatus"></span>
+    </div>
+    <div class="ha-map ha-map-sm mb-2" data-pick-lat="#latitude" data-pick-lng="#longitude"></div>
+    <div class="row">
+      <div class="col-6 mb-3">
+        <label class="form-label" for="latitude">Latitude</label>
+        <input type="text" id="latitude" name="latitude" class="form-control" inputmode="decimal"
+               placeholder="-1.286389" value="{{ listing.latitude if listing.latitude is not none else '' }}">
+      </div>
+      <div class="col-6 mb-3">
+        <label class="form-label" for="longitude">Longitude</label>
+        <input type="text" id="longitude" name="longitude" class="form-control" inputmode="decimal"
+               placeholder="36.817223" value="{{ listing.longitude if listing.longitude is not none else '' }}">
       </div>
     </div>
 

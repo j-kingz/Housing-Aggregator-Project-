@@ -1,12 +1,19 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_icon, location as where, verdict_badge, page_controls, empty_state %}
+{% from "_macros.html" import category_icon, location as where, verdict_badge, page_controls, empty_state, photo %}
 {% block title %}Search{% endblock %}
 
 {% block hero %}
-<section class="hero">
-  <div class="container">
-    <h1 class="mb-2">Find a place to rent without the endless scrolling</h1>
-    <p class="mb-0">Listings from different sites in one place, with the market price of every area alongside.</p>
+<section class="hero hero-home">
+  <div class="container position-relative">
+    <span class="hero-kicker"><i class="bi bi-geo-alt-fill me-1"></i> Nairobi and around</span>
+    <h1 class="mb-3">Find a home you can actually afford,<br class="d-none d-md-block"> and see which unit is free.</h1>
+    <p class="hero-lead mb-4">We gather rentals from several websites into one list, show the building, floor and unit,
+      and tell you whether the rent is fair for the area.</p>
+    <div class="hero-stats">
+      <div><strong>{{ "{:,}".format(stats.homes) }}</strong><span>homes listed</span></div>
+      <div><strong>{{ "{:,}".format(stats.vacant) }}</strong><span>confirmed vacant</span></div>
+      <div><strong>{{ stats.sources }}</strong><span>websites searched</span></div>
+    </div>
   </div>
 </section>
 {% endblock %}
@@ -15,21 +22,22 @@
 <form method="get" class="search-box">
   <div class="row g-2">
     <div class="col-md-4">
-      <label class="form-label small text-muted mb-1" for="location">Where</label>
+      <label class="form-label small text-muted mb-1" for="location">Where (place or building)</label>
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
-        <input type="text" id="location" name="location" class="form-control" placeholder="Search a building, place or area"
-               value="{{ location }}">
+        <input type="text" id="location" name="location" class="form-control"
+               placeholder="Start typing, e.g. Sarit Centre" value="{{ location }}"
+               data-suggest="place" data-google data-lat="#place_lat" data-lng="#place_lng">
       </div>
     </div>
     <div class="col-md-3">
       <label class="form-label small text-muted mb-1" for="area">Neighbourhood</label>
-      <select id="area" name="area" class="form-select">
-        <option value="">Any neighbourhood</option>
-        {% for a in areas %}
-          <option value="{{ a.name }}" {% if area == a.name %}selected{% endif %}>{{ a.name }}{{ '' if a.city == 'Nairobi' else ' (' ~ a.city ~ ')' }}</option>
-        {% endfor %}
-      </select>
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-signpost-split"></i></span>
+        <input type="text" id="area" name="area" class="form-control"
+               placeholder="Start typing, e.g. Kilimani" value="{{ area }}"
+               data-suggest="area" data-require-match>
+      </div>
     </div>
     <div class="col-md-2">
       <label class="form-label small text-muted mb-1" for="max_price">Max rent</label>
@@ -70,6 +78,7 @@
       <select id="availability" name="availability" class="form-select form-select-sm">
         <option value="">Any status</option>
         <option value="vacant" {% if availability == 'vacant' %}selected{% endif %}>Vacant now</option>
+        <option value="reserved" {% if availability == 'reserved' %}selected{% endif %}>Reserved</option>
         <option value="occupied" {% if availability == 'occupied' %}selected{% endif %}>Occupied</option>
         <option value="unknown" {% if availability == 'unknown' %}selected{% endif %}>Unknown</option>
       </select>
@@ -91,18 +100,44 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-3 d-flex align-items-end gap-2">
+  </div>
+
+  <div class="row g-2 mt-1">
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1" for="building">Building name</label>
+      <input type="text" id="building" name="building" class="form-control form-control-sm" placeholder="Any building"
+             value="{{ building }}" data-suggest="place">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1" for="floor">Floor</label>
+      <input type="number" id="floor" name="floor" class="form-control form-control-sm" placeholder="Any" min="-5" max="200"
+             value="{{ floor }}">
+    </div>
+    <div class="col-md-7 d-flex align-items-end gap-2 flex-wrap">
       <a class="btn btn-light btn-sm" href="{{ url_for('main.home') }}">Clear filters</a>
       <a class="btn btn-outline-primary btn-sm" href="{{ url_for('analytics.dashboard') }}">
-        <i class="bi bi-graph-up me-1"></i> Price analytics
+        <i class="bi bi-graph-up me-1"></i> See rent prices
       </a>
     </div>
   </div>
 </form>
 
+{% for n in notices %}
+  <div class="alert alert-info py-2 small"><i class="bi bi-info-circle me-1"></i>{{ n }}</div>
+{% endfor %}
+
+{% if popular and not (location or area or building) %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <span class="small text-muted me-1">Popular areas:</span>
+  {% for name, count in popular %}
+    <a class="chip" href="{{ url_for('main.home', area=name) }}">{{ name }} <span>{{ count }}</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
-    <h5 class="mb-0">Available listings</h5>
+    <h5 class="mb-0">Homes that match</h5>
     <span class="text-muted small">
       {{ pagination.total if pagination else 0 }} result{{ '' if pagination and pagination.total == 1 else 's' }}
     </span>
@@ -121,8 +156,9 @@
     <a href="{{ url_for('listings.detail', listing_id=listing.listing_id) }}" class="text-decoration-none text-reset">
       <div class="card listing-card h-100">
         <div class="listing-thumb">
-          {% if listing.category %}<span class="tag">{{ listing.category }}</span>{% endif %}
           {{ category_icon(listing.category) }}
+          {{ photo(listing) }}
+          {% if listing.category %}<span class="tag">{{ listing.category }}</span>{% endif %}
           {% set verdict = verdicts.get(listing.listing_id) %}
           {% if verdict and verdict.verdict in ('cheap', 'expensive') %}
             <span class="tag tag-verdict tag-{{ verdict.verdict }}">
@@ -134,18 +170,26 @@
           <div class="price mb-1">KSh {{ "{:,.0f}".format(listing.rentamount) }} <small>/ month</small></div>
           <h6 class="mb-1 text-truncate">{{ listing.title }}</h6>
           <p class="text-muted small mb-2"><i class="bi bi-geo-alt me-1"></i>{{ where(listing) }}</p>
-          {% if listing.building_name or listing.floor_number is not none or listing.room_number %}
-            <p class="text-muted small mb-2">
-              <i class="bi bi-door-open me-1"></i>
-              <strong>{{ listing.building_name or 'Building not specified' }}</strong>
-              {% if listing.floor_number is not none %} · Floor {{ listing.floor_number }}{% endif %}
-              {% if listing.room_number %} · Room {{ listing.room_number }}{% endif %}
-            </p>
-          {% endif %}
-          {% if listing.availability_status == 'vacant' %}
-            <span class="badge text-bg-success mb-2"><i class="bi bi-check-circle me-1"></i>Vacant room</span>
-          {% elif listing.availability_status == 'occupied' %}
-            <span class="badge text-bg-secondary mb-2">Occupied</span>
+          <div class="unit-strip mb-2">
+            {% if listing.building_name or listing.floor_number is not none or listing.room_number %}
+              <span><i class="bi bi-building me-1"></i><strong>{{ listing.building_name or 'Building not given' }}</strong></span>
+              <span>Floor <strong>{{ listing.floor_number if listing.floor_number is not none else '?' }}</strong></span>
+              <span>Unit <strong>{{ listing.room_number or '?' }}</strong></span>
+            {% else %}
+              <span class="text-muted"><i class="bi bi-building me-1"></i>The advert does not say which unit</span>
+            {% endif %}
+            {% if listing.availability_status == 'vacant' %}
+              <span class="badge text-bg-success ms-auto"><i class="bi bi-check-circle me-1"></i>Vacant</span>
+            {% elif listing.availability_status == 'reserved' %}
+              <span class="badge text-bg-warning ms-auto">Reserved</span>
+            {% elif listing.availability_status == 'occupied' %}
+              <span class="badge text-bg-secondary ms-auto">Occupied</span>
+            {% else %}
+              <span class="badge text-bg-light border ms-auto">Not confirmed</span>
+            {% endif %}
+          </div>
+          {% if listing.latitude is not none %}
+            <p class="text-muted small mb-2"><i class="bi bi-crosshair me-1"></i>GPS {{ "%.4f"|format(listing.latitude|float) }}, {{ "%.4f"|format(listing.longitude|float) }}{% if not listing.gps_exact %} (approx.){% endif %}</p>
           {% endif %}
           {% if listing.amenities %}
             <p class="text-muted small mb-2 listing-amenities">{{ listing.amenities }}</p>
@@ -167,7 +211,7 @@
 {{ page_controls(pagination, 'main.home', {
   'location': location, 'area': area, 'category': category, 'max_price': max_price,
   'bedrooms': bedrooms, 'source': source, 'sort': sort, 'place_lat': place_lat,
-  'place_lng': place_lng, 'availability': availability, 'building': building,
+  'place_lng': place_lng, 'availability': availability, 'building': building, 'floor': floor,
   }) }}
 {% else %}
   {{ empty_state('bi-search', 'Nothing matches that search yet.',
@@ -210,29 +254,4 @@
 </div>
 {% endif %}
 
-{% if google_maps_api_key %}
-<script>
-  function initPlaceAutocomplete() {
-    const input = document.getElementById('location');
-    if (!input || !window.google || !google.maps.places) return;
-    const autocomplete = new google.maps.places.Autocomplete(input, {
-      fields: ['formatted_address', 'geometry', 'name'],
-      types: ['establishment', 'geocode']
-    });
-    autocomplete.addListener('place_changed', function () {
-      const place = autocomplete.getPlace();
-      const location = place.geometry && place.geometry.location;
-      if (!location) return;
-      document.getElementById('place_lat').value = location.lat();
-      document.getElementById('place_lng').value = location.lng();
-      input.value = place.name || place.formatted_address || input.value;
-    });
-    input.addEventListener('input', function () {
-      document.getElementById('place_lat').value = '';
-      document.getElementById('place_lng').value = '';
-    });
-  }
-</script>
-<script async defer src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key|urlencode }}&libraries=places&callback=initPlaceAutocomplete"></script>
-{% endif %}
 {% endblock %}

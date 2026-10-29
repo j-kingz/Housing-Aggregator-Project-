@@ -1,10 +1,11 @@
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.analytics import services as analytics
 from app.extensions import db
 from app.models import Area, Property, ScrapingSource
+from app.places.services import resolve_area
 
 main_bp = Blueprint("main", __name__)
 
@@ -15,7 +16,10 @@ SORTS = {
     "price_low": "Price: low to high",
     "price_high": "Price: high to low",
     "beds": "Most bedrooms",
+    "nearest": "Nearest to the place I picked",
 }
+
+AVAILABILITY = ("vacant", "reserved", "occupied", "unknown")
 
 
 def to_int(value):
@@ -44,15 +48,19 @@ def home():
     place_lat = to_float(request.args.get("place_lat"))
     place_lng = to_float(request.args.get("place_lng"))
     area = request.args.get("area", "").strip()
+    building = request.args.get("building", "").strip()
+    floor = to_int(request.args.get("floor"))
     category = request.args.get("category", "").strip()
     max_price = to_int(request.args.get("max_price"))
     bedrooms = to_int(request.args.get("bedrooms"))
     source = request.args.get("source", "").strip()
     availability = request.args.get("availability", "").strip()
-    sort = request.args.get("sort", "newest").strip() or "newest"
+    sort = request.args.get("sort", "").strip()
     page = to_int(request.args.get("page")) or 1
 
     query = Property.query.filter(Property.is_active.is_(True))
+
+    notices = []
 
     if location:
         like = f"%{location}%"
@@ -64,13 +72,32 @@ def home():
             Property.title.ilike(like),
         ]
         if place_lat is not None and place_lng is not None:
+            # about 2.5 km around the place that was picked on the map
             location_matches.append(
-                (Property.latitude.between(place_lat - 0.05, place_lat + 0.05))
-                & (Property.longitude.between(place_lng - 0.05, place_lng + 0.05))
+                (Property.latitude.between(place_lat - 0.025, place_lat + 0.025))
+                & (Property.longitude.between(place_lng - 0.025, place_lng + 0.025))
             )
         query = query.filter(or_(*location_matches))
+
     if area:
-        query = query.filter(Property.address.ilike(area))
+        # the box suggests real neighbourhoods; if the text is a near miss we
+        # use the closest one and say so instead of showing an empty page
+        found, corrected = resolve_area(area)
+        if found is None:
+            notices.append(f"We don't know a neighbourhood called \"{area}\", so it was ignored.")
+            area = ""
+        else:
+            if corrected:
+                notices.append(f"Showing {found.name} (you typed \"{area}\").")
+            area = found.name
+            query = query.filter(
+                or_(Property.address.ilike(area), Property.area_id == found.area_id)
+            )
+
+    if building:
+        query = query.filter(Property.building_name.ilike(f"%{building}%"))
+    if floor is not None:
+        query = query.filter(Property.floor_number == floor)
     if category:
         query = query.filter(Property.category == category)
     if max_price:
@@ -83,17 +110,24 @@ def home():
         if source_id is not None:
             conditions.append(Property.source_id == source_id)
         query = query.filter(or_(*conditions))
-    if availability in ("vacant", "occupied", "unknown"):
+    if availability in AVAILABILITY:
         query = query.filter(Property.availability_status == availability)
 
-    if sort == "price_low":
+    has_point = place_lat is not None and place_lng is not None
+    if sort not in SORTS or (sort == "nearest" and not has_point):
+        sort = "nearest" if has_point else "newest"
+
+    if sort == "nearest":
+        query = query.filter(Property.latitude.isnot(None)).order_by(
+            (Property.latitude - place_lat) * (Property.latitude - place_lat)
+            + (Property.longitude - place_lng) * (Property.longitude - place_lng)
+        )
+    elif sort == "price_low":
         query = query.order_by(Property.rentamount.asc(), Property.listing_id.desc())
     elif sort == "price_high":
         query = query.order_by(Property.rentamount.desc(), Property.listing_id.desc())
     elif sort == "beds":
-        query = query.order_by(
-            Property.bedrooms.desc(), Property.rentamount.asc()
-        )
+        query = query.order_by(Property.bedrooms.desc(), Property.rentamount.asc())
     else:
         query = query.order_by(Property.listingdate.desc(), Property.listing_id.desc())
 
@@ -113,15 +147,44 @@ def home():
         .all()
     )
 
+    # numbers and shortcuts for the top of the page
+    stats = {
+        "homes": Property.query.filter(Property.is_active.is_(True)).count(),
+        "vacant": Property.query.filter(
+            Property.is_active.is_(True), Property.availability_status == "vacant"
+        ).count(),
+        # websites that really contributed listings (the offline sample is not one)
+        "sources": db.session.query(func.count(func.distinct(Property.source_name)))
+        .filter(
+            Property.is_active.is_(True),
+            Property.source_name.isnot(None),
+            Property.source_name != "Sample fixture",
+        )
+        .scalar(),
+    }
+    popular = (
+        db.session.query(Property.address, func.count(Property.listing_id))
+        .filter(Property.is_active.is_(True), Property.area_id.isnot(None))
+        .group_by(Property.address)
+        .order_by(func.count(Property.listing_id).desc())
+        .limit(8)
+        .all()
+    )
+
     return render_template(
         "home.html",
+        stats=stats,
+        popular=popular,
         listings=listings,
         pagination=pagination,
         verdicts=verdicts,
         location=location,
-        place_lat=place_lat or "",
-        place_lng=place_lng or "",
+        place_lat=place_lat if place_lat is not None else "",
+        place_lng=place_lng if place_lng is not None else "",
         area=area,
+        building=building,
+        floor=floor if floor is not None else "",
+        notices=notices,
         category=category,
         categories=CATEGORIES,
         max_price=max_price or "",
@@ -160,31 +223,6 @@ def profile():
         user.lastname = lastname
         user.phonenumber = request.form.get("phonenumber", "").strip() or None
 
-        if user.renter:
-            user.renter.preferredlocation = request.form.get("preferredlocation", "").strip() or None
-            user.renter.budgetrange = request.form.get("budgetrange", "").strip() or None
-            income = request.form.get("monthlyincome", "").strip()
-            if income:
-                try:
-                    user.renter.monthlyincome = float(income)
-                except ValueError:
-                    flash("Monthly income has to be a number.", "danger")
-                    return redirect(url_for("main.profile"))
-            else:
-                user.renter.monthlyincome = None
-            user.renter.workplace = request.form.get("workplace", "").strip() or None
-            user.renter.commute_mode = request.form.get("commute_mode", "matatu").strip() or "matatu"
-
-            # the workplace neighbourhood is picked from the list, and the
-            # name is kept alongside it so the text still shows on the page
-            workplace_area_id = request.form.get("workplace_area_id", "").strip()
-            if workplace_area_id.isdigit():
-                area = Area.query.get(int(workplace_area_id))
-                user.renter.workplace_area_id = area.area_id if area else None
-                user.renter.workplacearea = area.name if area else None
-            else:
-                user.renter.workplace_area_id = None
-                user.renter.workplacearea = None
         if user.landlord:
             user.landlord.businessname = request.form.get("businessname", "").strip() or None
 
@@ -192,5 +230,10 @@ def profile():
         flash("Profile updated.", "success")
         return redirect(url_for("main.profile"))
 
-    areas = Area.query.order_by(Area.city, Area.name).all()
-    return render_template("profile.html", user=user, areas=areas)
+    return render_template("profile.html", user=user)
+
+
+@main_bp.route("/how-it-works")
+def help():
+    """A plain-language guide to what the platform does and how to use it."""
+    return render_template("help.html")

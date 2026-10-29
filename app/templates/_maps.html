@@ -1,0 +1,4 @@
+{# Loads the Google Maps script when a key is configured. Pages that show a map or suggest places include this. #}
+{% if google_maps_api_key %}
+<script async src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key|urlencode }}&loading=async&libraries=places&v=weekly&callback=haGoogleReady"></script>
+{% endif %}
