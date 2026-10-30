@@ -26,7 +26,9 @@ def add_listing(**extra):
 
 class TestPublicPages:
     def test_the_home_page(self, client):
-        assert client.get("/").status_code == 200
+        response = client.get("/")
+        assert response.status_code == 200
+        assert b"navbar-expand-lg" in response.data
 
     def test_the_search_page_with_filters(self, client):
         add_listing()
