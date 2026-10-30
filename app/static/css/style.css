@@ -723,6 +723,60 @@ a.confirm-help:hover { background: #fef3c7; color: #78350f; }
 .km-label { background: #fffbeb; border: 1px solid #f59e0b; color: #92400e; font-weight: 700; box-shadow: none; }
 .detail-banner .heart-btn { top: 0.9rem; right: 0.9rem; }
 
-/* keep the menu on one line even when signed in */
-.site-nav .nav-link { white-space: nowrap; font-size: 0.9rem; padding: 0.4rem 0.6rem !important; }
-@media (min-width: 768px) and (max-width: 1199.98px) { .site-nav .nav-link i { display: none; } }
+/* Keep authenticated navigation readable as role-specific links are added. */
+.site-nav .navbar-collapse {
+  gap: 0.75rem;
+}
+
+.site-nav .navbar-nav {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.site-nav .nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  white-space: normal;
+  font-size: 0.88rem;
+  line-height: 1.2;
+  padding: 0.4rem 0.6rem !important;
+}
+
+.site-nav .nav-actions {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (min-width: 992px) and (max-width: 1199.98px) {
+  .site-nav .nav-link i { display: none; }
+  .site-nav .nav-link { text-align: center; }
+}
+
+@media (max-width: 991.98px) {
+  .site-nav .navbar-collapse {
+    padding: 0.75rem 0;
+  }
+
+  .site-nav .navbar-nav {
+    align-items: stretch;
+  }
+
+  .site-nav .nav-item,
+  .site-nav .nav-link {
+    width: 100%;
+  }
+
+  .site-nav .nav-link {
+    justify-content: flex-start;
+    padding: 0.65rem 0.75rem !important;
+  }
+
+  .site-nav .nav-actions {
+    border-top: 1px solid rgba(15, 118, 110, 0.12);
+    padding-top: 0.75rem;
+    width: 100%;
+  }
+}
