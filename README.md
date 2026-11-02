@@ -61,6 +61,7 @@ Both are set in `.env` (see `.env.example`). The site works without either.
 
 - **Google Maps:** put a key in `GOOGLE_MAPS_API_KEY` (enable "Maps JavaScript API" and "Places API (New)", and restrict the key to your local address). It adds Google place suggestions to the search boxes. Without it the site still suggests every county, neighbourhood and building from its own data, and other places across Kenya from OpenStreetMap (Photon, a free service, so it needs internet), and shows OpenStreetMap maps.
 - **M-Pesa:** register at https://developer.safaricom.co.ke and fill in the `MPESA_*` values. Safaricom must be able to reach your callback, so run a tunnel such as ngrok and set `MPESA_CALLBACK_BASE_URL`. With no keys the payment flow runs in a clearly labelled **demo mode** where no money moves.
+- **Reservation proof email:** set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `MAIL_SENDER` in `.env`. A successful reservation sends a receipt to the renter's registered email. Run `python init_db.py` once after upgrading so the payment email tracking columns are added.
 
 ## Where the data is stored
 
