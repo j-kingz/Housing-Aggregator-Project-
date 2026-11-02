@@ -31,6 +31,11 @@
       <p class="mb-1">KSh {{ "{:,.0f}".format(payment.amount) }} received.</p>
       <p class="text-muted small">M-Pesa receipt: <strong id="receipt">{{ payment.mpesa_receipt or '' }}</strong></p>
       {% if payment.simulated %}<p class="badge text-bg-warning">Demo payment, no real money moved</p>{% endif %}
+      {% if payment.confirmation_email_sent_at %}
+        <p class="small text-success"><i class="bi bi-envelope-check"></i> A reservation confirmation was sent to your registered email.</p>
+      {% elif payment.confirmation_email_error and current_user.user_id == payment.renter_id %}
+        <p class="small text-warning"><i class="bi bi-envelope-exclamation"></i> The reservation is confirmed, but the proof email could not be sent. Please contact support and keep this payment reference: <strong>{{ payment.payment_id }}</strong>.</p>
+      {% endif %}
     </div>
 
     <div id="stateFailed" {% if payment.status not in ('failed', 'cancelled') %}hidden{% endif %}>
