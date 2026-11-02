@@ -70,6 +70,26 @@ class TestDemoPayment:
         assert data["receipt"].startswith("DEMO")
         assert db.session.get(Property, unit.listing_id).availability_status == "reserved"
 
+    def test_a_paid_reservation_sends_one_confirmation_email(self, client, app, areas, monkeypatch):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        sent = []
+        monkeypatch.setattr(
+            "app.payments.routes.send_reservation_confirmation",
+            lambda payment: sent.append(payment.payment_id),
+        )
+
+        start_payment(client, unit)
+        payment = Payment.query.one()
+        payment.created_at = utcnow() - timedelta(seconds=30)
+        db.session.commit()
+        client.get(f"/payments/{payment.payment_id}/status.json")
+        client.get(f"/payments/{payment.payment_id}/status.json")
+
+        assert sent == [payment.payment_id]
+        assert db.session.get(Payment, payment.payment_id).confirmation_email_sent_at is not None
+
     def test_a_reserved_unit_cannot_be_paid_for_again(self, client, app, areas):
         make_user("r@example.com", "Renter")
         login(client, "r@example.com")
