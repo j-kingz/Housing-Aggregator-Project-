@@ -18,6 +18,16 @@ class Config:
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
+    # ---- transactional email ----
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+    SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+    SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", 15))
+    MAIL_SENDER = os.getenv("MAIL_SENDER", "")
+
     # ---- M-Pesa (Safaricom Daraja, STK push) ----
     # With no consumer key the platform runs in demo mode: the whole payment
     # flow works but no real request is sent and no money moves.
