@@ -26,6 +26,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from app.extensions import csrf, db
+from app.email import EmailDeliveryError, send_reservation_confirmation
 from app.models import Notification, Payment, Property, utcnow
 from app.payments import mpesa
 
@@ -156,6 +157,19 @@ def _finish(payment, code, description, receipt=None):
                 url=url_for("payments.status", payment_id=payment.payment_id),
             )
         )
+        db.session.commit()
+        try:
+            send_reservation_confirmation(payment)
+            payment.confirmation_email_sent_at = utcnow()
+            payment.confirmation_email_error = None
+        except EmailDeliveryError as exc:
+            payment.confirmation_email_error = str(exc)[:255]
+            current_app.logger.warning(
+                "Reservation email was not sent for payment %s: %s",
+                payment.payment_id,
+                exc,
+            )
+        db.session.commit()
     elif code in (1032,):
         payment.status = "cancelled"
     else:
