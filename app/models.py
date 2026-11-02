@@ -387,6 +387,8 @@ class Payment(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
     paid_at = db.Column(db.DateTime)
     simulated = db.Column(db.Boolean, default=False)
+    confirmation_email_sent_at = db.Column(db.DateTime)
+    confirmation_email_error = db.Column(db.String(255))
 
     renter = db.relationship("RenterDetails", back_populates="payments")
     listing = db.relationship("Property", back_populates="payments")
