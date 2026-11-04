@@ -68,6 +68,13 @@
             </form>
           {% endif %}
           {% if u.user_id != current_user.user_id %}
+            {% if u.is_admin %}
+              <form method="post" action="{{ url_for('admin.demote_user', user_id=u.user_id) }}" class="d-inline"
+                    onsubmit="return confirm('Remove administrator access from this account?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-warning">Remove admin</button>
+              </form>
+            {% endif %}
             <form method="post" action="{{ url_for('admin.toggle_user', user_id=u.user_id) }}" class="d-inline"
                   onsubmit="return confirm('{{ 'Deactivate' if u.status == 'active' else 'Reactivate' }} this account?');">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -80,6 +80,30 @@ def toggle_user(user_id):
     return redirect(url_for("admin.users"))
 
 
+@admin_bp.route("/users/<int:user_id>/demote", methods=["POST"])
+@admin_required
+def demote_user(user_id):
+    user = db.get_or_404(User, user_id)
+    if user.user_id == current_user.user_id:
+        flash("You can't remove your own administrator access.", "warning")
+        return redirect(url_for("admin.users"))
+    if not user.is_admin:
+        flash(f"{user.full_name} is not an administrator.", "warning")
+        return redirect(url_for("admin.users"))
+
+    renter_role = Role.query.filter_by(name="Renter").first()
+    if renter_role is None:
+        flash("The Renter role is not configured.", "danger")
+        return redirect(url_for("admin.users"))
+
+    user.role = renter_role
+    db.session.flush()
+    user.ensure_renter_details()
+    db.session.commit()
+    flash(f"{user.full_name} is no longer an administrator.", "success")
+    return redirect(url_for("admin.users"))
+
+
 @admin_bp.route("/users/<int:user_id>/verify", methods=["POST"])
 @admin_required
 def verify_landlord(user_id):

@@ -3,7 +3,7 @@
 import re
 
 from app.extensions import db
-from app.models import Property, RenterDetails
+from app.models import Property, RenterDetails, Role, User
 from tests.conftest import login
 
 def add_listing(**extra):
@@ -161,6 +161,29 @@ class TestLandlordPages:
 
 
 class TestAdminPages:
+    def test_an_admin_can_remove_another_admin(self, client, admin):
+        target_role = Role.query.filter_by(name="Administrator").first()
+        target = User(
+            firstname="Second",
+            lastname="Admin",
+            email="second-admin@example.com",
+            role=target_role,
+        )
+        target.set_password("password123")
+        db.session.add(target)
+        db.session.commit()
+
+        login(client, admin.email)
+        response = client.post(
+            f"/admin/users/{target.user_id}/demote",
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert target.role.name == "Renter"
+        assert target.renter is not None
+        assert target.is_admin is False
+
     def test_the_sources_page(self, client, admin):
         login(client, admin.email)
         assert client.get("/admin/sources").status_code == 200
