@@ -5,6 +5,21 @@ from config import Config
 from app.extensions import csrf, db, login_manager
 
 
+def _upgrade_database(app):
+    """Add any new tables or columns on startup, so an older database never
+    breaks a page with "Unknown column" after the code is updated."""
+    from app.migrations import run_migrations
+
+    with app.app_context():
+        try:
+            added, _ = run_migrations()
+            if added:
+                app.logger.warning("Database upgraded, added columns: %s", ", ".join(added))
+        except Exception as exc:  # the database may be down; pages will say so
+            app.logger.warning("Could not check the database schema: %s", exc)
+            db.session.rollback()
+
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -45,6 +60,9 @@ def create_app(config_class=Config):
     app.register_blueprint(places_bp)
     app.register_blueprint(payments_bp)
     app.register_blueprint(favorites_bp)
+
+    if not app.config.get("TESTING"):
+        _upgrade_database(app)
 
     @app.context_processor
     def inject_notifications():

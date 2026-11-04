@@ -29,11 +29,39 @@
       </div>
       <hr class="my-2">
       <div class="d-flex justify-content-between"><span>Monthly rent</span><span>KSh {{ "{:,.0f}".format(listing.rentamount) }}</span></div>
-      <div class="d-flex justify-content-between fw-semibold fs-5"><span>Deposit to pay now</span><span>KSh {{ "{:,.0f}".format(amount) }}</span></div>
+      <div class="d-flex justify-content-between fw-semibold fs-5"><span>Reservation deposit</span><span>KSh {{ "{:,.0f}".format(amount) }}</span></div>
     </div>
 
-    <form method="post">
+    <form method="post" id="payForm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label class="form-label">How much do you want to pay?</label>
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="radio" name="amount_choice" id="choiceDeposit" value="reservation"
+               {% if choice != 'custom' %}checked{% endif %}>
+        <label class="form-check-label" for="choiceDeposit">
+          The reservation deposit: <strong>KSh {{ "{:,.0f}".format(amount) }}</strong>
+        </label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="radio" name="amount_choice" id="choiceCustom" value="custom"
+               {% if choice == 'custom' %}checked{% endif %}>
+        <label class="form-check-label" for="choiceCustom">An amount of my choice</label>
+      </div>
+      <div id="customBox" class="mb-3 ps-4" {% if choice != 'custom' %}hidden{% endif %}>
+        <div class="input-group">
+          <span class="input-group-text">KSh</span>
+          <input type="number" id="custom_amount" name="custom_amount" class="form-control" min="1"
+                 max="{{ max_custom }}" step="1" placeholder="e.g. 1" value="{{ custom_amount }}">
+        </div>
+        <div class="alert alert-info small mt-2 mb-0">
+          <i class="bi bi-info-circle"></i>
+          <strong>This is not the real reservation price yet.</strong> You can pay any amount from KSh 1 to
+          KSh {{ "{:,}".format(max_custom) }}. The unit's reservation deposit is KSh {{ "{:,.0f}".format(amount) }},
+          and the landlord may ask for the balance.
+        </div>
+      </div>
+
       <label class="form-label" for="phone">Your M-Pesa phone number</label>
       <div class="input-group mb-1">
         <span class="input-group-text"><i class="bi bi-telephone"></i></span>
@@ -41,8 +69,34 @@
                value="{{ phone }}" required autocomplete="tel">
       </div>
       <div class="form-text mb-3">A prompt appears on this phone. Enter your M-Pesa PIN to approve.</div>
-      <button class="btn btn-success w-100 py-2"><i class="bi bi-check2-circle me-1"></i> Pay KSh {{ "{:,.0f}".format(amount) }} with M-Pesa</button>
+
+      <label class="form-label" for="receipt_email">Also send a copy of the proof to <span class="text-muted small">(optional)</span></label>
+      <input type="text" id="receipt_email" name="receipt_email" class="form-control mb-1"
+             placeholder="name@gmail.com, other@gmail.com" value="{{ receipt_email }}" autocomplete="off">
+      <div class="form-text mb-3">The proof always goes to your account email, <strong>{{ current_user.email }}</strong>.
+        Add up to 5 more addresses, separated by commas.</div>
+
+      <button class="btn btn-success w-100 py-2"><i class="bi bi-check2-circle me-1"></i>
+        <span id="payLabel">Pay KSh {{ "{:,.0f}".format(amount) }} with M-Pesa</span></button>
     </form>
   </div>
 </div>
+<script>
+  (function () {
+    const deposit = {{ amount | int }};
+    const box = document.getElementById('customBox');
+    const input = document.getElementById('custom_amount');
+    const label = document.getElementById('payLabel');
+    const update = () => {
+      const custom = document.getElementById('choiceCustom').checked;
+      box.hidden = !custom;
+      input.required = custom;
+      const value = custom ? parseInt(input.value, 10) : deposit;
+      label.textContent = value > 0 ? `Pay KSh ${value.toLocaleString()} with M-Pesa` : 'Pay with M-Pesa';
+    };
+    document.querySelectorAll('input[name=amount_choice]').forEach(r => r.addEventListener('change', update));
+    input.addEventListener('input', update);
+    update();
+  })();
+</script>
 {% endblock %}

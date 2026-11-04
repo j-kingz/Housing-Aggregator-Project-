@@ -31,10 +31,21 @@
       <p class="mb-1">KSh {{ "{:,.0f}".format(payment.amount) }} received.</p>
       <p class="text-muted small">M-Pesa receipt: <strong id="receipt">{{ payment.mpesa_receipt or '' }}</strong></p>
       {% if payment.simulated %}<p class="badge text-bg-warning">Demo payment, no real money moved</p>{% endif %}
+      {% if payment.is_custom_amount %}
+        <p class="small alert alert-info py-2">You chose this amount. It is not the real reservation price for this unit yet{% if deposit %}; the reservation deposit is KSh {{ "{:,.0f}".format(deposit) }}{% endif %}.</p>
+      {% endif %}
       {% if payment.confirmation_email_sent_at %}
-        <p class="small text-success"><i class="bi bi-envelope-check"></i> A reservation confirmation was sent to your registered email.</p>
+        <p class="small text-success"><i class="bi bi-envelope-check"></i> A reservation confirmation was sent to {{ payment.proof_email or 'your registered email' }}.</p>
       {% elif payment.confirmation_email_error and current_user.user_id == payment.renter_id %}
-        <p class="small text-warning"><i class="bi bi-envelope-exclamation"></i> The reservation is confirmed, but the proof email could not be sent. Please contact support and keep this payment reference: <strong>{{ payment.payment_id }}</strong>.</p>
+        <p class="small text-warning"><i class="bi bi-envelope-exclamation"></i> The reservation is confirmed, but the proof email could not be sent. Keep this payment reference: <strong>{{ payment.payment_id }}</strong>.</p>
+        {% if current_user.is_admin %}<p class="small text-muted">{{ payment.confirmation_email_error }}</p>{% endif %}
+      {% endif %}
+      {% if payment.status == 'paid' and (current_user.user_id == payment.renter_id or current_user.is_admin) %}
+        <form method="post" action="{{ url_for('payments.resend_email', payment_id=payment.payment_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-success"><i class="bi bi-envelope"></i>
+            {{ 'Email the proof again' if payment.confirmation_email_sent_at else 'Email me the proof' }}</button>
+        </form>
       {% endif %}
     </div>
 

@@ -389,8 +389,32 @@ class Payment(db.Model):
     simulated = db.Column(db.Boolean, default=False)
     confirmation_email_sent_at = db.Column(db.DateTime)
     confirmation_email_error = db.Column(db.String(255))
+    # extra addresses (comma separated) that also get the proof email
+    receipt_email = db.Column(db.String(255))
 
     renter = db.relationship("RenterDetails", back_populates="payments")
+
+    @property
+    def is_custom_amount(self):
+        """Paid an amount the renter chose, not the calculated reservation deposit."""
+        return self.purpose == "custom"
+
+    @property
+    def proof_recipients(self):
+        """The renter's sign-up email first, then any extra copies, without repeats."""
+        user = self.renter.user if self.renter else None
+        addresses = [user.email] if user and user.email else []
+        addresses += [a.strip() for a in (self.receipt_email or "").split(",") if a.strip()]
+        unique = []
+        for address in addresses:
+            if address.lower() not in {u.lower() for u in unique}:
+                unique.append(address)
+        return unique
+
+    @property
+    def proof_email(self):
+        """The recipients as one readable string."""
+        return ", ".join(self.proof_recipients) or None
     listing = db.relationship("Property", back_populates="payments")
 
 

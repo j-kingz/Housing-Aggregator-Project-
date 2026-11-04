@@ -194,3 +194,146 @@ class TestCallback:
     def test_garbage_is_accepted_quietly(self, client, app, areas):
         response = client.post(self.url(app), json={"hello": "world"})
         assert response.get_json()["ResultCode"] == 0
+
+
+class TestProofEmail:
+    def _paid(self, client):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        start_payment(client, unit)
+        payment = Payment.query.one()
+        payment.created_at = utcnow() - timedelta(seconds=30)
+        db.session.commit()
+        client.get(f"/payments/{payment.payment_id}/status.json")
+        return payment
+
+    def test_the_email_is_a_receipt_with_the_unit_and_receipt(self, client, app, areas, monkeypatch):
+        sent = []
+        monkeypatch.setattr("app.email.deliver", lambda message, config=None: sent.append(message))
+        app.config.update(SMTP_HOST="smtp.example.com", MAIL_SENDER="noreply@example.com")
+        payment = self._paid(client)
+
+        assert len(sent) == 1
+        message = sent[0]
+        assert message["To"] == "r@example.com"
+        text = message.get_body(("plain",)).get_content()
+        assert db.session.get(Payment, payment.payment_id).mpesa_receipt in text
+        assert "1A" in text
+        assert message.get_body(("html",)) is not None
+
+    def test_the_renter_can_ask_for_the_proof_again(self, client, app, areas, monkeypatch):
+        sent = []
+        monkeypatch.setattr(
+            "app.payments.routes.send_reservation_confirmation",
+            lambda payment: sent.append(payment.payment_id),
+        )
+        payment = self._paid(client)
+        response = client.post(f"/payments/{payment.payment_id}/resend-email", follow_redirects=True)
+
+        assert sent == [payment.payment_id, payment.payment_id]
+        assert "was sent to r@example.com" in response.get_data(as_text=True)
+
+    def test_without_smtp_the_reason_is_recorded(self, client, app, areas):
+        app.config.update(SMTP_HOST="", MAIL_SENDER="")
+        payment = self._paid(client)
+        assert "not configured" in db.session.get(Payment, payment.payment_id).confirmation_email_error
+
+
+class TestCustomAmount:
+    def test_a_renter_can_pay_an_amount_of_their_choice(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        client.post(f"/payments/pay/{unit.listing_id}", data={
+            "phone": "0712345678", "amount_choice": "custom", "custom_amount": "1",
+        })
+        payment = Payment.query.one()
+        assert float(payment.amount) == 1
+        assert payment.is_custom_amount
+
+        page = client.get(f"/payments/{payment.payment_id}").get_data(as_text=True)
+        assert "not the real reservation price" in page
+
+    def test_the_pay_page_explains_the_custom_amount(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        page = client.get(f"/payments/pay/{unit.listing_id}").get_data(as_text=True)
+        assert "This is not the real reservation price yet" in page
+
+    def test_a_bad_amount_is_refused(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        for bad in ("0", "abc", "300000"):
+            response = client.post(f"/payments/pay/{unit.listing_id}", data={
+                "phone": "0712345678", "amount_choice": "custom", "custom_amount": bad,
+            })
+            assert response.status_code == 400
+        assert Payment.query.count() == 0
+
+    def test_the_proof_can_go_to_another_email(self, client, app, areas, monkeypatch):
+        sent = []
+        monkeypatch.setattr("app.email.deliver", lambda message, config=None: sent.append(message))
+        app.config.update(SMTP_HOST="smtp.example.com", MAIL_SENDER="noreply@example.com")
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        client.post(f"/payments/pay/{unit.listing_id}", data={
+            "phone": "0712345678", "amount_choice": "custom", "custom_amount": "5",
+            "receipt_email": "someone@gmail.com, other@gmail.com; R@example.com",
+        })
+        payment = Payment.query.one()
+        payment.created_at = utcnow() - timedelta(seconds=30)
+        db.session.commit()
+        client.get(f"/payments/{payment.payment_id}/status.json")
+
+        # the account's own email always comes first, and no address is repeated
+        assert sent[0]["To"] == "r@example.com, someone@gmail.com, other@gmail.com"
+        assert "not the real reservation price" in sent[0].get_body(("plain",)).get_content()
+
+    def test_a_bad_extra_email_is_refused(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        response = client.post(f"/payments/pay/{unit.listing_id}", data={
+            "phone": "0712345678", "receipt_email": "good@gmail.com, not-an-email",
+        })
+        assert response.status_code == 400
+        assert Payment.query.count() == 0
+
+
+class TestDarajaSettings:
+    def test_the_callback_is_always_https(self):
+        config = {"SECRET_KEY": "x", "MPESA_CALLBACK_BASE_URL": ""}
+        assert mpesa.callback_url(config).startswith("https://")
+        config["MPESA_CALLBACK_BASE_URL"] = "https://abc.ngrok-free.app"
+        assert mpesa.callback_url(config).startswith(
+            "https://abc.ngrok-free.app/payments/mpesa/callback/"
+        )
+
+    def test_the_sandbox_passkey_is_used_when_none_is_set(self):
+        assert mpesa._passkey({"MPESA_ENV": "sandbox", "MPESA_PASSKEY": ""}) == mpesa.SANDBOX_PASSKEY
+        assert mpesa._passkey({"MPESA_ENV": "production", "MPESA_PASSKEY": ""}) == ""
+        assert mpesa._passkey({"MPESA_ENV": "sandbox", "MPESA_PASSKEY": "mine"}) == "mine"
+
+    def test_the_stk_push_matches_the_daraja_request(self, monkeypatch):
+        captured = {}
+
+        def fake_post(config, path, payload):
+            captured.update(path=path, payload=payload)
+            return {"ResponseCode": "0", "MerchantRequestID": "M1", "CheckoutRequestID": "C1"}
+
+        monkeypatch.setattr(mpesa, "_post", fake_post)
+        config = {"SECRET_KEY": "x", "MPESA_SHORTCODE": "174379", "MPESA_ENV": "sandbox"}
+        result = mpesa.stk_push(config, "254708374149", 1.0, "UNIT1", "Reservation")
+
+        assert result == {"merchant_request_id": "M1", "checkout_request_id": "C1"}
+        assert captured["path"] == "/mpesa/stkpush/v1/processrequest"
+        body = captured["payload"]
+        assert body["TransactionType"] == "CustomerPayBillOnline"
+        assert body["PartyA"] == body["PhoneNumber"] == "254708374149"
+        assert body["PartyB"] == body["BusinessShortCode"] == "174379"
+        assert body["Amount"] == 1
+        assert body["CallBackURL"].startswith("https://")

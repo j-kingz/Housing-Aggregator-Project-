@@ -2,61 +2,37 @@
 
 import smtplib
 from email.message import EmailMessage
+from html import escape
 
 from flask import current_app
+
+
+CUSTOM_AMOUNT_NOTE = (
+    "You chose this amount yourself. It is not the real reservation price for this "
+    "unit yet; the landlord may ask for the balance of the reservation deposit."
+)
 
 
 class EmailDeliveryError(RuntimeError):
     """Raised when a configured email provider cannot deliver a message."""
 
 
-def send_reservation_confirmation(payment):
-    """Send the reservation receipt to the renter's registered email address."""
-    config = current_app.config
-    host = config.get("SMTP_HOST", "")
-    sender = config.get("MAIL_SENDER", "")
-    renter = payment.renter.user if payment.renter else None
-    listing = payment.listing
+def email_configured(config=None):
+    config = config if config is not None else current_app.config
+    return bool(config.get("SMTP_HOST") and config.get("MAIL_SENDER"))
 
-    if not host or not sender:
+
+def deliver(message, config=None):
+    """Send an EmailMessage through the SMTP server in the settings."""
+    config = config if config is not None else current_app.config
+    if not email_configured(config):
         raise EmailDeliveryError(
             "Reservation email is not configured. Set SMTP_HOST and MAIL_SENDER."
         )
-    if not renter or not renter.email:
-        raise EmailDeliveryError("The renter does not have a valid email address.")
-    if not listing:
-        raise EmailDeliveryError("The reserved listing no longer exists.")
+    if not message["From"]:
+        message["From"] = config["MAIL_SENDER"]
 
-    location = listing.building_name or listing.title or "your selected unit"
-    unit_details = []
-    if listing.floor_number is not None:
-        unit_details.append(f"Floor {listing.floor_number}")
-    if listing.room_number:
-        unit_details.append(f"Unit {listing.room_number}")
-    if unit_details:
-        location += " - " + ", ".join(unit_details)
-
-    receipt = payment.mpesa_receipt or "Not supplied"
-    paid_at = payment.paid_at.strftime("%Y-%m-%d %H:%M UTC") if payment.paid_at else "Not supplied"
-    message = EmailMessage()
-    message["Subject"] = f"Reservation confirmation - {location}"
-    message["From"] = sender
-    message["To"] = renter.email
-    message.set_content(
-        f"Hello {renter.full_name},\n\n"
-        "This email confirms that the following home/unit has been reserved for you "
-        "after your reservation deposit was received:\n\n"
-        f"Listing: {listing.title}\n"
-        f"Location: {location}\n"
-        f"Amount received: KSh {float(payment.amount):,.0f}\n"
-        f"M-Pesa receipt: {receipt}\n"
-        f"Payment reference: {payment.payment_id}\n"
-        f"Confirmed at: {paid_at}\n\n"
-        "Please keep this email as proof of the reservation. It confirms the "
-        "reservation deposit only and is not a lease agreement.\n\n"
-        "Housing Aggregator"
-    )
-
+    host = config["SMTP_HOST"]
     port = int(config.get("SMTP_PORT", 587))
     username = config.get("SMTP_USERNAME", "")
     password = config.get("SMTP_PASSWORD", "")
@@ -79,3 +55,93 @@ def send_reservation_confirmation(payment):
                 smtp.send_message(message)
     except (OSError, smtplib.SMTPException) as exc:
         raise EmailDeliveryError(f"Reservation confirmation email failed: {exc}") from exc
+
+
+def send_reservation_confirmation(payment):
+    """Send the reservation receipt to the renter's registered email address."""
+    config = current_app.config
+    renter = payment.renter.user if payment.renter else None
+    listing = payment.listing
+
+    if not email_configured(config):
+        raise EmailDeliveryError(
+            "Reservation email is not configured. Set SMTP_HOST and MAIL_SENDER."
+        )
+    to_address = payment.proof_email  # every recipient, comma separated
+    if not renter or not to_address:
+        raise EmailDeliveryError("The renter does not have a valid email address.")
+    if not listing:
+        raise EmailDeliveryError("The reserved listing no longer exists.")
+
+    location = listing.building_name or listing.title or "your selected unit"
+    unit_details = []
+    if listing.floor_number is not None:
+        unit_details.append(f"Floor {listing.floor_number}")
+    if listing.room_number:
+        unit_details.append(f"Unit {listing.room_number}")
+    if unit_details:
+        location += " - " + ", ".join(unit_details)
+    area = ", ".join(part for part in (listing.address, listing.city) if part)
+
+    receipt = payment.mpesa_receipt or "Not supplied"
+    paid_at = payment.paid_at.strftime("%Y-%m-%d %H:%M UTC") if payment.paid_at else "Not supplied"
+    amount = f"KSh {float(payment.amount):,.0f}"
+    rows = [
+        ("Listing", listing.title),
+        ("Unit", location),
+        ("Area", area or "Not supplied"),
+        ("Monthly rent", f"KSh {float(listing.rentamount):,.0f}"),
+        ("Amount received" if payment.is_custom_amount else "Deposit received", amount),
+        ("Paid from", payment.phone or "Not supplied"),
+        ("M-Pesa receipt", receipt),
+        ("Payment reference", str(payment.payment_id)),
+        ("Confirmed at", paid_at),
+    ]
+    if payment.is_custom_amount:
+        rows.append(("Note", CUSTOM_AMOUNT_NOTE))
+    if payment.simulated:
+        rows.append(("Note", "Demo payment - no real money moved"))
+
+    message = EmailMessage()
+    message["Subject"] = f"Reservation confirmation - {location}"
+    message["From"] = config["MAIL_SENDER"]
+    message["To"] = to_address
+    message.set_content(
+        f"Hello {renter.full_name},\n\n"
+        "This email confirms that the following home/unit has been reserved for you "
+        "after your reservation deposit was received:\n\n"
+        + "".join(f"{label}: {value}\n" for label, value in rows)
+        + "\nPlease keep this email as proof of the reservation. It confirms the "
+        "reservation deposit only and is not a lease agreement.\n\n"
+        "Housing Aggregator"
+    )
+    table = "".join(
+        f'<tr><td style="padding:6px 12px 6px 0;color:#52514e">{escape(label)}</td>'
+        f'<td style="padding:6px 0;font-weight:600">{escape(str(value))}</td></tr>'
+        for label, value in rows
+    )
+    message.add_alternative(
+        f"""<div style="font-family:Arial,sans-serif;max-width:560px;color:#0b0b0b">
+  <h2 style="color:#0f766e;margin-bottom:4px">Reservation confirmed</h2>
+  <p>Hello {escape(renter.full_name)},</p>
+  <p>This email confirms that the following home/unit has been reserved for you
+  after your reservation deposit of <strong>{escape(amount)}</strong> was received.</p>
+  <table style="border-collapse:collapse;font-size:14px">{table}</table>
+  <p style="font-size:13px;color:#52514e">Please keep this email as proof of the reservation.
+  It confirms the reservation deposit only and is not a lease agreement.</p>
+  <p>Housing Aggregator</p>
+</div>""",
+        subtype="html",
+    )
+    deliver(message, config)
+
+
+def send_test_email(to_address, config=None):
+    """A short message that proves the SMTP settings work."""
+    message = EmailMessage()
+    message["Subject"] = "Housing Aggregator test email"
+    message["To"] = to_address
+    message.set_content(
+        "Your SMTP settings work. Reservation confirmation emails will be delivered."
+    )
+    deliver(message, config)

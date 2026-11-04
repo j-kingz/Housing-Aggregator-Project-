@@ -8,6 +8,7 @@ reserved so nobody else can pay for it.
 import hmac
 import math
 import random
+import re
 import string
 from datetime import timedelta
 from decimal import Decimal
@@ -36,6 +37,10 @@ payments_bp = Blueprint("payments", __name__, url_prefix="/payments")
 DEMO_CONFIRM_SECONDS = 4
 # a prompt the phone never answered is closed after this long
 PENDING_EXPIRES = timedelta(minutes=3)
+# M-Pesa's largest single STK push payment
+MAX_CUSTOM_AMOUNT = 250_000
+MAX_EXTRA_EMAILS = 5
+EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}")
 
 
 def reservation_amount(listing):
@@ -79,24 +84,51 @@ def pay(listing_id):
         return redirect(url_for("listings.detail", listing_id=listing_id))
 
     if request.method == "POST":
-        phone = mpesa.normalise_phone(request.form.get("phone"))
-        if not phone:
-            flash("Enter a valid Safaricom number, for example 0712 345 678.", "danger")
+        form = request.form
+        choice = "custom" if form.get("amount_choice") == "custom" else "reservation"
+
+        def refuse(message):
+            flash(message, "danger")
             return render_template(
                 "payments/pay.html", listing=listing, amount=amount, demo=demo,
-                phone=request.form.get("phone", ""),
+                phone=form.get("phone", ""), choice=choice,
+                custom_amount=form.get("custom_amount", ""),
+                receipt_email=form.get("receipt_email", ""),
+                max_custom=MAX_CUSTOM_AMOUNT,
             ), 400
+
+        phone = mpesa.normalise_phone(form.get("phone"))
+        if not phone:
+            return refuse("Enter a valid Safaricom number, for example 0712 345 678.")
+
+        to_pay = amount
+        if choice == "custom":
+            try:
+                to_pay = int(str(form.get("custom_amount", "")).replace(",", "").strip())
+            except ValueError:
+                to_pay = 0
+            if not 1 <= to_pay <= MAX_CUSTOM_AMOUNT:
+                return refuse(f"Enter an amount between KSh 1 and KSh {MAX_CUSTOM_AMOUNT:,}.")
+
+        extra = [a for a in re.split(r"[,;\s]+", form.get("receipt_email") or "") if a]
+        bad = [a for a in extra if not EMAIL_PATTERN.fullmatch(a)]
+        if bad:
+            return refuse(f"{bad[0]} is not a valid email address.")
+        if len(extra) > MAX_EXTRA_EMAILS:
+            return refuse(f"Add at most {MAX_EXTRA_EMAILS} extra email addresses.")
+        receipt_email = ", ".join(extra)
 
         renter = current_user.ensure_renter_details()
         payment = Payment(
             renter_id=renter.renter_id,
             listing_id=listing.listing_id,
-            amount=Decimal(amount),
+            amount=Decimal(to_pay),
             modeofpayment="M-Pesa",
             status="pending",
             phone=phone,
-            purpose="reservation",
+            purpose=choice,
             simulated=demo,
+            receipt_email=receipt_email or None,
         )
         db.session.add(payment)
         db.session.flush()
@@ -109,7 +141,7 @@ def pay(listing_id):
                 payment.merchant_request_id = payment.checkout_request_id
             else:
                 result = mpesa.stk_push(
-                    config, phone, amount,
+                    config, phone, to_pay,
                     reference=f"UNIT{listing.listing_id}",
                     description="Reservation",
                 )
@@ -131,10 +163,31 @@ def pay(listing_id):
         amount=amount,
         demo=demo,
         phone=current_user.phonenumber or "",
+        choice="reservation",
+        custom_amount="",
+        receipt_email="",
+        max_custom=MAX_CUSTOM_AMOUNT,
     )
 
 
 # -- status -----------------------------------------------------------------
+def _email_proof(payment):
+    """Email the reservation proof to the renter and record whether it went."""
+    try:
+        send_reservation_confirmation(payment)
+        payment.confirmation_email_sent_at = utcnow()
+        payment.confirmation_email_error = None
+        sent = True
+    except EmailDeliveryError as exc:
+        payment.confirmation_email_error = str(exc)[:255]
+        current_app.logger.warning(
+            "Reservation email was not sent for payment %s: %s", payment.payment_id, exc
+        )
+        sent = False
+    db.session.commit()
+    return sent
+
+
 def _finish(payment, code, description, receipt=None):
     """Record the outcome of a payment. Safe to call twice."""
     if payment.status != "pending":
@@ -158,18 +211,7 @@ def _finish(payment, code, description, receipt=None):
             )
         )
         db.session.commit()
-        try:
-            send_reservation_confirmation(payment)
-            payment.confirmation_email_sent_at = utcnow()
-            payment.confirmation_email_error = None
-        except EmailDeliveryError as exc:
-            payment.confirmation_email_error = str(exc)[:255]
-            current_app.logger.warning(
-                "Reservation email was not sent for payment %s: %s",
-                payment.payment_id,
-                exc,
-            )
-        db.session.commit()
+        _email_proof(payment)
     elif code in (1032,):
         payment.status = "cancelled"
     else:
@@ -209,7 +251,11 @@ def status(payment_id):
     if not _visible_to_current_user(payment):
         abort(403)
     _reconcile(payment)
-    return render_template("payments/status.html", payment=payment, listing=payment.listing)
+    listing = payment.listing
+    return render_template(
+        "payments/status.html", payment=payment, listing=listing,
+        deposit=reservation_amount(listing) if listing else None,
+    )
 
 
 @payments_bp.route("/<int:payment_id>/status.json")
@@ -239,6 +285,22 @@ def cancel(payment_id):
         payment.result_desc = "Cancelled by the renter."
         db.session.commit()
         flash("Payment cancelled. If you already approved it on your phone, contact support.", "info")
+    return redirect(url_for("payments.status", payment_id=payment.payment_id))
+
+
+@payments_bp.route("/<int:payment_id>/resend-email", methods=["POST"])
+@login_required
+def resend_email(payment_id):
+    """Send the reservation proof email again (the renter or an administrator)."""
+    payment = db.get_or_404(Payment, payment_id)
+    if payment.renter_id != current_user.user_id and not current_user.is_admin:
+        abort(403)
+    if payment.status != "paid":
+        flash("Only a paid reservation has a proof email.", "warning")
+    elif _email_proof(payment):
+        flash(f"The reservation proof was sent to {payment.proof_email}.", "success")
+    else:
+        flash("The email could not be sent: " + (payment.confirmation_email_error or ""), "danger")
     return redirect(url_for("payments.status", payment_id=payment.payment_id))
 
 

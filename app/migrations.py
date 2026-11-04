@@ -106,9 +106,36 @@ def backfill_defaults():
     return changed
 
 
+# text columns made longer after they were first created: table -> column
+WIDENED_COLUMNS = {"payment": ["receipt_email"]}
+
+
+def widen_columns():
+    """Make VARCHAR columns as long as the models now say (MySQL only)."""
+    if db.engine.dialect.name != "mysql":
+        return []
+    changed = []
+    tables = {t.name: t for t in db.metadata.sorted_tables}
+    for table_name, names in WIDENED_COLUMNS.items():
+        if table_name not in _existing_tables():
+            continue
+        current = {c["name"]: c for c in inspect(db.engine).get_columns(table_name)}
+        for name in names:
+            wanted = tables[table_name].columns[name].type.length
+            have = getattr(current.get(name, {}).get("type"), "length", None)
+            if have is not None and wanted and have < wanted:
+                db.session.execute(
+                    text(f"ALTER TABLE `{table_name}` MODIFY `{name}` VARCHAR({wanted}) NULL")
+                )
+                changed.append(f"{table_name}.{name}")
+    if changed:
+        db.session.commit()
+    return changed
+
+
 def run_migrations():
     """Bring an existing database up to the current schema. Safe to re-run."""
     create_missing_tables()
-    added = add_missing_columns()
+    added = add_missing_columns() + widen_columns()
     backfilled = backfill_defaults()
     return added, backfilled
