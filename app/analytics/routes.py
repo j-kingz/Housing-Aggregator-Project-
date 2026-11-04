@@ -25,8 +25,16 @@ def dashboard():
 
     benchmarks = services.area_benchmarks(city=city or None)
     distribution = services.rent_distribution(listings)
-    trend = services.price_trend(city=city or None)
     stats = services.summarise(listings)
+
+    # the price trend and the average rents are given per county and per home
+    # type (bedsitter, 1 bedroom ... mansion); the page switches county with a
+    # dropdown so counties are never mixed together
+    all_listings = Property.query.filter(Property.is_active.is_(True)).all()
+    trend_by_county = services.price_trend_by_county(all_listings)
+    averages_by_county = services.average_rent_by_county(all_listings)
+    county_names = list(trend_by_county)
+    default_county = city if city in trend_by_county else (county_names[0] if county_names else "")
     per_sqft = services.rent_per_sqft_stats(listings)
 
     cities = sorted({listing.city for listing in listings if listing.city})
@@ -37,24 +45,19 @@ def dashboard():
     cheapest = solid[-3:][::-1] if solid else []
     dearest = solid[:3]
 
-    # average rent for each city we hold listings for
-    city_rows = []
-    for name in cities:
-        city_listings = [listing for listing in listings if listing.city == name]
-        city_stats = services.summarise(city_listings)
-        city_rows.append({"city": name, **city_stats})
-    city_rows.sort(key=lambda row: row["average"], reverse=True)
-
     return render_template(
         "analytics/dashboard.html",
         stats=stats,
         per_sqft=per_sqft,
         benchmarks=benchmarks,
         distribution=distribution,
-        trend=trend,
+        trend_by_county=trend_by_county,
+        averages_by_county=averages_by_county,
+        county_names=county_names,
+        default_county=default_county,
+        unit_types=services.UNIT_TYPES,
         cities=cities,
         city=city,
-        city_rows=city_rows,
         cheapest=cheapest,
         dearest=dearest,
         areas_covered=areas_covered,

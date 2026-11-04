@@ -19,7 +19,7 @@
   </div>
   <form method="get" class="d-flex gap-2">
     <select name="city" class="form-select form-select-sm" onchange="this.form.submit()">
-      <option value="">All cities</option>
+      <option value="">All counties</option>
       {% for c in cities %}
         <option value="{{ c }}" {% if city == c %}selected{% endif %}>{{ c }}</option>
       {% endfor %}
@@ -40,30 +40,64 @@
   <div class="col-6 col-lg-3">{{ stat_card('Neighbourhoods', areas_covered, sub='covered by listings', icon='bi-geo-alt') }}</div>
 </div>
 
-<div class="row g-4 mb-4">
-  <div class="col-lg-7">
-    <div class="panel p-3 h-100">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="mb-0">How rents are spread</h6>
-        <span class="text-muted small">Each bar is a price band</span>
-      </div>
-      <canvas id="distributionChart" height="260"></canvas>
-    </div>
+<div class="panel p-3 mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h6 class="mb-0">How rents are spread</h6>
+    <span class="text-muted small">Listings per price band: 5k&ndash;15k, 15k&ndash;35k, 35k&ndash;65k and so on{% if city %} &middot; {{ city }}{% endif %}</span>
   </div>
-  <div class="col-lg-5">
-    <div class="panel p-3 h-100">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="mb-0">Price trend</h6>
-        <span class="text-muted small">By month listed</span>
-      </div>
-      {% if trend|length > 1 %}
-        <canvas id="trendChart" height="260"></canvas>
-      {% else %}
-        <p class="text-muted small mb-0">
-          The trend chart needs listings with different dates. There is only one month of data so far.
-        </p>
-      {% endif %}
+  <canvas id="distributionChart" height="110"></canvas>
+</div>
+
+<div class="panel p-3 mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <div>
+      <h6 class="mb-0">Price trend by home type</h6>
+      <span class="text-muted small" id="trendNote"></span>
     </div>
+    <label class="d-flex align-items-center gap-2 small mb-0">
+      County
+      <select id="trendCounty" class="form-select form-select-sm" style="min-width: 160px;">
+        {% for c in county_names %}
+          <option value="{{ c }}" {% if c == default_county %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <canvas id="trendChart" height="120"></canvas>
+  <p class="text-muted small mb-0 mt-2">
+    Average asking rent of each home type in the selected county. Click a home type in the legend to hide it,
+    for example hide houses and mansions to see the cheaper homes more closely.
+  </p>
+</div>
+
+<div class="panel p-3 mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <div>
+      <h6 class="mb-0"><i class="bi bi-buildings me-1"></i> Average rent by county</h6>
+      <span class="text-muted small">Each home type is averaged on its own, then placed in its 10k price bracket (5k&ndash;15k, 15k&ndash;25k &hellip;)</span>
+    </div>
+    <label class="d-flex align-items-center gap-2 small mb-0">
+      County
+      <select id="averageCounty" class="form-select form-select-sm" style="min-width: 160px;">
+        {% for c in county_names %}
+          <option value="{{ c }}" {% if c == default_county %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Home type</th>
+          <th class="text-center">Listings</th>
+          <th>Price bracket</th>
+          <th class="text-end">Average rent</th>
+          <th class="text-end">Cheapest &ndash; dearest</th>
+        </tr>
+      </thead>
+      <tbody id="averageRows"></tbody>
+    </table>
   </div>
 </div>
 
@@ -103,13 +137,6 @@
     </div>
   </div>
 </div>
-
-{% if city_rows|length > 1 %}
-<div class="panel p-3 mb-4">
-  <h6 class="mb-3"><i class="bi bi-buildings me-1"></i> Average rent by city</h6>
-  <canvas id="cityChart" height="220"></canvas>
-</div>
-{% endif %}
 
 {% if per_sqft.count %}
 <div class="panel p-3 mb-4">
@@ -191,9 +218,21 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   const brand = '#0f766e';
-  const accent = '#f59e0b';
   const grid = 'rgba(31, 41, 55, 0.08)';
+  const ink = '#52514e';
+  // one fixed colour per home type (validated categorical order), so a home
+  // type keeps its colour whichever county is picked
+  const unitTypes = {{ unit_types | tojson }};
+  const typeColours = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+  const colourOf = (type) => typeColours[unitTypes.indexOf(type) % typeColours.length];
 
+  const short = (v) => {
+    if (v >= 1000000) return (v / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+    return Math.round(v / 1000).toLocaleString() + 'k';
+  };
+  const ksh = (v) => 'KSh ' + Math.round(v).toLocaleString();
+
+  // ---- how rents are spread ----
   const distributionData = {{ distribution | tojson }};
   new Chart(document.getElementById('distributionChart'), {
     type: 'bar',
@@ -203,7 +242,8 @@
         label: 'Listings',
         data: distributionData.map(d => d.count),
         backgroundColor: brand,
-        borderRadius: 6,
+        borderRadius: 4,
+        borderSkipped: 'bottom',
       }]
     },
     options: {
@@ -212,74 +252,132 @@
         legend: {display: false},
         tooltip: {
           callbacks: {
-            label: (ctx) => {
-              const band = distributionData[ctx.dataIndex];
-              return ` ${ctx.parsed.y} listings, KSh ${Math.round(band.from).toLocaleString()} - ${Math.round(band.to).toLocaleString()}`;
-            }
+            title: (items) => 'KSh ' + distributionData[items[0].dataIndex].label,
+            label: (ctx) => ` ${ctx.parsed.y} listing${ctx.parsed.y === 1 ? '' : 's'}`
           }
         }
       },
       scales: {
-        x: {grid: {display: false}, ticks: {maxRotation: 60, minRotation: 0, font: {size: 10}}},
-        y: {beginAtZero: true, grid: {color: grid}, ticks: {precision: 0}}
+        x: {grid: {display: false}, ticks: {color: ink, maxRotation: 45, minRotation: 0, font: {size: 11}}},
+        y: {beginAtZero: true, grid: {color: grid}, ticks: {color: ink, precision: 0},
+            title: {display: true, text: 'Listings', color: ink}}
       }
     }
   });
 
-  const trendData = {{ trend | tojson }};
-  if (trendData.length > 1) {
-    new Chart(document.getElementById('trendChart'), {
-      type: 'line',
-      data: {
-        labels: trendData.map(t => t.label),
-        datasets: [{
-          label: 'Average rent',
-          data: trendData.map(t => Math.round(t.average)),
-          borderColor: accent,
-          backgroundColor: 'rgba(245, 158, 11, 0.15)',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 3
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: {display: false},
-          tooltip: {callbacks: {label: (ctx) => ' KSh ' + ctx.parsed.y.toLocaleString()}}
-        },
-        scales: {
-          x: {grid: {display: false}},
-          y: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}}
-        }
+  // ---- price trend, one county at a time ----
+  const trendByCounty = {{ trend_by_county | tojson }};
+  const trendSelect = document.getElementById('trendCounty');
+  const trendNote = document.getElementById('trendNote');
+
+  // y axis ticks at 5k, 15k, 25k ... ; when the prices run higher the step
+  // grows in whole multiples of 10k so the axis stays readable
+  const yAxis = {
+    grid: {color: grid},
+    ticks: {color: ink, callback: (v) => short(v)},
+    title: {display: true, text: 'Average rent (KSh)', color: ink},
+    afterDataLimits: (axis) => {
+      const lo = Math.max(0, axis.min), hi = Math.max(axis.max, 15000);
+      let step = 10000;
+      for (const m of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]) {
+        step = 10000 * m;
+        if ((hi - 5000) / step <= 10) break;
       }
-    });
+      axis._step = step;
+      axis.min = lo < 5000 ? 0 : 5000 + Math.floor((lo - 5000) / step) * step;
+      axis.max = 5000 + Math.ceil((hi - 5000) / step) * step;
+    },
+    afterBuildTicks: (axis) => {
+      const ticks = [];
+      for (let v = 5000; v <= axis.max; v += axis._step) {
+        if (v >= axis.min) ticks.push({value: v});
+      }
+      axis.ticks = ticks;
+    }
+  };
+
+  const trendChart = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {labels: [], datasets: []},
+    options: {
+      responsive: true,
+      interaction: {mode: 'index', intersect: false},
+      plugins: {
+        legend: {position: 'bottom', labels: {color: ink, usePointStyle: true, boxWidth: 8}},
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const n = ctx.dataset.counts[ctx.dataIndex];
+              return ` ${ctx.dataset.label}: ${ksh(ctx.parsed.y)} (${n} listing${n === 1 ? '' : 's'})`;
+            }
+          }
+        }
+      },
+      scales: {x: {offset: true, grid: {display: false}, ticks: {color: ink}}, y: yAxis}
+    }
+  });
+
+  function showTrend(county) {
+    const t = trendByCounty[county] || {labels: [], series: [], granularity: 'month'};
+    trendChart.data.labels = t.labels;
+    trendChart.data.datasets = t.series.map(s => ({
+      label: s.type,
+      data: s.values,
+      counts: s.counts,
+      borderColor: colourOf(s.type),
+      backgroundColor: colourOf(s.type),
+      borderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      pointBorderColor: '#ffffff',
+      pointBorderWidth: 2,
+      spanGaps: true,
+      tension: 0.25,
+    }));
+    trendChart.update();
+    const periods = t.labels.length;
+    trendNote.textContent = periods > 1
+      ? `${county} County, by ${t.granularity} listed`
+      : `${county} County: only one ${t.granularity} of data so far, so each home type shows a single point. More points appear as the scraper runs.`;
   }
 
-  const cityData = {{ city_rows | tojson }};
-  if (document.getElementById('cityChart') && cityData.length) {
-    new Chart(document.getElementById('cityChart'), {
-      type: 'bar',
-      data: {
-        labels: cityData.map(c => c.city),
-        datasets: [{
-          label: 'Average rent',
-          data: cityData.map(c => Math.round(c.average)),
-          backgroundColor: brand,
-          borderRadius: 6,
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: {legend: {display: false}},
-        scales: {
-          x: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}},
-          y: {grid: {display: false}}
-        }
-      }
-    });
+  // ---- average rent by county, per home type ----
+  const averagesByCounty = {{ averages_by_county | tojson }};
+  const averageSelect = document.getElementById('averageCounty');
+  const averageRows = document.getElementById('averageRows');
+
+  function showAverages(county) {
+    const rows = averagesByCounty[county] || [];
+    averageRows.replaceChildren(...rows.map(r => {
+      const tr = document.createElement('tr');
+      const cell = (text, cls) => {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = text;
+        return td;
+      };
+      const name = cell('', 'fw-medium');
+      const dot = document.createElement('span');
+      dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:${colourOf(r.type)}`;
+      name.append(dot, document.createTextNode(r.type));
+      tr.append(
+        name,
+        cell(r.count, 'text-center'),
+        cell(r.bracket, 'fw-semibold'),
+        cell(ksh(r.average), 'text-end'),
+        cell(r.count > 1 ? `${ksh(r.min)} – ${ksh(r.max)}` : '—', 'text-end text-muted small')
+      );
+      return tr;
+    }));
+    if (!rows.length) {
+      averageRows.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No listings in this county yet.</td></tr>';
+    }
   }
+
+  trendSelect.addEventListener('change', () => showTrend(trendSelect.value));
+  averageSelect.addEventListener('change', () => showAverages(averageSelect.value));
+  showTrend(trendSelect.value);
+  showAverages(averageSelect.value);
 </script>
 {% endif %}
 {% endblock %}

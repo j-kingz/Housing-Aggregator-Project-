@@ -8,7 +8,7 @@ The functions work on plain rows and dictionaries so they can be unit tested
 without touching the database.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from statistics import median
 
 from app.models import MarketSnapshot, Property
@@ -94,47 +94,203 @@ def area_benchmarks(city=None, minimum=1):
     return results
 
 
-def rent_distribution(listings, buckets=10):
-    """How the rents are spread across price bands, for the histogram chart."""
+# ---- price bands ---------------------------------------------------------
+# "How rents are spread" groups rents into bands that start at KSh 5,000 and
+# widen as they go up: 5k-15k, 15k-35k, 35k-65k, 65k-105k ... (each band is
+# 10k wider than the one before), so bedsitters and mansions both land in
+# sensible bands. Everything above the last band shares one "and above" band.
+BAND_START = 5000
+BAND_STEP = 10000
+MAX_BANDS = 10
+
+
+def price_band_edges():
+    """[5000, 15000, 35000, 65000, ...]: the edges of every band."""
+    edges = [BAND_START]
+    width = BAND_STEP
+    for _ in range(MAX_BANDS):
+        edges.append(edges[-1] + width)
+        width += BAND_STEP
+    return edges
+
+
+def format_ksh_short(amount):
+    """5000 -> '5k', 1500000 -> '1.5M'."""
+    amount = float(amount)
+    if amount >= 1_000_000:
+        return f"{amount / 1_000_000:,.2f}".rstrip("0").rstrip(".") + "M"
+    return f"{amount / 1000:,.0f}k"
+
+
+def rent_distribution(listings):
+    """How the rents are spread across the price bands, for the histogram chart.
+
+    Empty bands in the middle are kept (a gap in the market is information);
+    empty bands above the dearest listing are dropped.
+    """
     rents = [_rent(listing.rentamount) for listing in listings]
     rents = [rent for rent in rents if rent > 0]
     if not rents:
         return []
 
-    lowest = min(rents)
-    highest = max(rents)
-    if lowest == highest:
-        return [
-            {
-                "label": f"KSh {lowest:,.0f}",
-                "from": lowest,
-                "to": highest,
-                "count": len(rents),
-            }
-        ]
-
-    width = (highest - lowest) / buckets
+    edges = price_band_edges()
     bands = []
+    below = sum(1 for rent in rents if rent < edges[0])
+    if below:
+        bands.append({"label": f"Below {format_ksh_short(edges[0])}", "from": 0,
+                      "to": edges[0], "count": below})
+    for start, end in zip(edges, edges[1:]):
+        bands.append({
+            "label": f"{format_ksh_short(start)} - {format_ksh_short(end)}",
+            "from": start,
+            "to": end,
+            "count": sum(1 for rent in rents if start <= rent < end),
+        })
+    top = edges[-1]
+    bands.append({"label": f"{format_ksh_short(top)} and above", "from": top, "to": None,
+                  "count": sum(1 for rent in rents if rent >= top)})
 
-    for index in range(buckets):
-        start = lowest + index * width
-        end = start + width
-        # the last band includes the highest value
-        count = sum(
-            1
-            for rent in rents
-            if (start <= rent < end) or (index == buckets - 1 and rent == highest)
-        )
-        bands.append(
-            {
-                "label": f"{start / 1000:.0f}k - {end / 1000:.0f}k",
-                "from": start,
-                "to": end,
-                "count": count,
-            }
-        )
-
+    while bands and bands[-1]["count"] == 0:
+        bands.pop()
     return bands
+
+
+def ten_k_bracket(amount):
+    """The 10k bracket an amount falls in, counted from 5k: 5k-15k, 15k-25k, 25k-35k ..."""
+    amount = float(amount)
+    if amount < BAND_START:
+        return {"from": 0, "to": BAND_START, "label": f"Below KSh {format_ksh_short(BAND_START)}"}
+    start = BAND_START + int((amount - BAND_START) // BAND_STEP) * BAND_STEP
+    end = start + BAND_STEP
+    return {"from": start, "to": end,
+            "label": f"KSh {format_ksh_short(start)} - {format_ksh_short(end)}"}
+
+
+# ---- home types ------------------------------------------------------------
+# Rents are only compared within one kind of home: a bedsitter is never
+# averaged together with a mansion.
+UNIT_TYPES = [
+    "Bedsitter / Studio",
+    "1 Bedroom",
+    "2 Bedrooms",
+    "3+ Bedroom apartment",
+    "Apartment (bedrooms not given)",
+    "House / Mansion",
+]
+HOUSE_CATEGORIES = {"maisonette", "townhouse", "bungalow", "villa", "mansion", "house"}
+
+
+def unit_type(listing):
+    """Which of UNIT_TYPES a listing belongs to."""
+    category = (listing.category or "").strip().lower()
+    bedrooms = listing.bedrooms
+    if category in ("bedsitter", "studio") or bedrooms == 0:
+        return "Bedsitter / Studio"
+    if category in HOUSE_CATEGORIES:
+        return "House / Mansion"
+    if bedrooms is None:
+        return "Apartment (bedrooms not given)"
+    if bedrooms == 1:
+        return "1 Bedroom"
+    if bedrooms == 2:
+        return "2 Bedrooms"
+    return "3+ Bedroom apartment"
+
+
+def county_of(listing):
+    """The county a listing is in: its neighbourhood's county, else its city."""
+    area = getattr(listing, "area", None)
+    county = area.county if area is not None else None
+    return county or listing.city or "Unspecified"
+
+
+def _by_county(listings):
+    """{county: [listings]}, the county with the most listings first."""
+    groups = {}
+    for listing in listings:
+        groups.setdefault(county_of(listing), []).append(listing)
+    order = sorted(groups, key=lambda name: (-len(groups[name]), name))
+    return {name: groups[name] for name in order}
+
+
+def counties_of(listings):
+    """Counties that have listings, the one with the most listings first."""
+    return list(_by_county(listings))
+
+
+def average_rent_by_type(listings):
+    """One row per home type: count, average, the average's 10k bracket, and range."""
+    groups = {}
+    for listing in listings:
+        rent = _rent(listing.rentamount)
+        if rent > 0:
+            groups.setdefault(unit_type(listing), []).append(rent)
+    rows = []
+    for name in UNIT_TYPES:
+        rents = groups.get(name)
+        if not rents:
+            continue
+        average = sum(rents) / len(rents)
+        rows.append({
+            "type": name,
+            "count": len(rents),
+            "average": average,
+            "median": median(rents),
+            "min": min(rents),
+            "max": max(rents),
+            "bracket": ten_k_bracket(average)["label"],
+        })
+    return rows
+
+
+def average_rent_by_county(listings):
+    """{county: rows from average_rent_by_type} for every county with listings."""
+    return {name: average_rent_by_type(group) for name, group in _by_county(listings).items()}
+
+
+def _period(day, granularity):
+    if granularity == "month":
+        return (day.year, day.month), day.strftime("%b %Y")
+    monday = day - timedelta(days=day.weekday())
+    return (monday.year, monday.month, monday.day), "Week of " + monday.strftime("%d %b")
+
+
+def price_trend_by_type(listings, months=12):
+    """Average rent per period for each home type, oldest period first.
+
+    Grouped by month. When every listing falls in a single month it is grouped
+    by week instead so the chart still shows movement.
+    Returns {"granularity", "labels", "series": [{"type", "values", "counts"}]}.
+    """
+    dated = [item for item in listings if item.listingdate and _rent(item.rentamount) > 0]
+    months_seen = {(item.listingdate.year, item.listingdate.month) for item in dated}
+    granularity = "month" if len(months_seen) > 1 else "week"
+
+    labels = {}
+    cells = {}
+    for listing in dated:
+        key, label = _period(listing.listingdate, granularity)
+        labels[key] = label
+        cells.setdefault((unit_type(listing), key), []).append(_rent(listing.rentamount))
+
+    keys = sorted(labels)
+    if granularity == "month" and months:
+        keys = keys[-months:]
+    series = []
+    for name in UNIT_TYPES:
+        values, counts = [], []
+        for key in keys:
+            rents = cells.get((name, key))
+            values.append(round(sum(rents) / len(rents)) if rents else None)
+            counts.append(len(rents) if rents else 0)
+        if any(counts):
+            series.append({"type": name, "values": values, "counts": counts})
+    return {"granularity": granularity, "labels": [labels[k] for k in keys], "series": series}
+
+
+def price_trend_by_county(listings):
+    """{county: price_trend_by_type(...)} for every county with listings."""
+    return {name: price_trend_by_type(group) for name, group in _by_county(listings).items()}
 
 
 def price_trend(city=None, area=None, months=12):
