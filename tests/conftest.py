@@ -24,6 +24,12 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     WTF_CSRF_ENABLED = False
     SECRET_KEY = "test-secret-key-for-the-test-suite"
+    # never talk to Safaricom or a mail server from the tests, whatever .env says
+    MPESA_CONSUMER_KEY = ""
+    MPESA_CONSUMER_SECRET = ""
+    MPESA_CALLBACK_BASE_URL = ""
+    SMTP_HOST = ""
+    MAIL_SENDER = ""
 
 
 @pytest.fixture(autouse=True)

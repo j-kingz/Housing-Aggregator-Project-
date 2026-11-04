@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import re
+import time
 from datetime import datetime
 
 import requests
@@ -63,8 +64,21 @@ def callback_token(config):
     return hmac.new(key, b"mpesa-callback", hashlib.sha256).hexdigest()[:32]
 
 
+# Daraja refuses a CallBackURL that is not a public https address. When none
+# is configured (running on your own computer without a tunnel) this
+# placeholder is sent instead; Safaricom's callback then goes nowhere and the
+# status page finds the result with the STK query API.
+PLACEHOLDER_CALLBACK_BASE = "https://example.com"
+
+# Safaricom's published passkey for the sandbox test shortcode 174379
+SANDBOX_SHORTCODE = "174379"
+SANDBOX_PASSKEY = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
+
+
 def callback_url(config):
-    base = config.get("MPESA_CALLBACK_BASE_URL") or "http://localhost"
+    base = (config.get("MPESA_CALLBACK_BASE_URL") or "").rstrip("/")
+    if not base.startswith("https://"):
+        base = PLACEHOLDER_CALLBACK_BASE
     return f"{base}/payments/mpesa/callback/{callback_token(config)}"
 
 
@@ -72,34 +86,87 @@ def _base(config):
     return BASE_URLS.get(config.get("MPESA_ENV"), BASE_URLS["sandbox"])
 
 
-def _access_token(config):
+def _shortcode(config):
+    return str(config.get("MPESA_SHORTCODE") or SANDBOX_SHORTCODE)
+
+
+def _passkey(config):
+    passkey = config.get("MPESA_PASSKEY") or ""
+    if not passkey and config.get("MPESA_ENV", "sandbox") != "production":
+        passkey = SANDBOX_PASSKEY
+    return passkey
+
+
+HEADERS = {"User-Agent": "HousingAggregator/1.0 (+python-requests)", "Accept": "application/json"}
+
+# Daraja tokens last an hour. Asking for a new one on every call is slow and
+# can get the computer blocked by Safaricom's firewall, so one is reused
+# until shortly before it expires.
+_token_cache = {}
+
+
+def _blocked_message(response):
+    if "incapsula" in response.text.lower() or response.status_code == 403:
+        return ("Safaricom's firewall refused the request (HTTP 403). This is usually "
+                "temporary after many requests in a short time; wait a few minutes and try again.")
+    return f"Unexpected reply from Safaricom (HTTP {response.status_code})."
+
+
+def _access_token(config, refresh=False):
+    key = (_base(config), config["MPESA_CONSUMER_KEY"])
+    cached = _token_cache.get(key)
+    if cached and not refresh and cached[1] > time.time():
+        return cached[0]
     try:
         response = requests.get(
             f"{_base(config)}/oauth/v1/generate",
             params={"grant_type": "client_credentials"},
             auth=(config["MPESA_CONSUMER_KEY"], config["MPESA_CONSUMER_SECRET"]),
+            headers=HEADERS,
             timeout=TIMEOUT,
         )
-        response.raise_for_status()
-        return response.json()["access_token"]
-    except (requests.RequestException, KeyError, ValueError) as exc:
+    except requests.RequestException as exc:
         raise MpesaError(f"Could not sign in to M-Pesa: {exc}") from exc
+    try:
+        data = response.json()
+        token = data["access_token"]
+    except (KeyError, ValueError):
+        if response.status_code in (400, 401):
+            raise MpesaError("M-Pesa refused the consumer key or secret. Check them in .env.")
+        raise MpesaError("Could not sign in to M-Pesa. " + _blocked_message(response))
+    lifetime = int(data.get("expires_in") or 3599)
+    _token_cache[key] = (token, time.time() + lifetime - 120)
+    return token
 
 
 def _password(config, timestamp):
-    raw = f"{config['MPESA_SHORTCODE']}{config['MPESA_PASSKEY']}{timestamp}"
+    raw = f"{_shortcode(config)}{_passkey(config)}{timestamp}"
     return base64.b64encode(raw.encode()).decode()
 
 
-def _post(config, path, payload):
-    headers = {"Authorization": f"Bearer {_access_token(config)}"}
+def _send(config, path, payload, token):
+    headers = {**HEADERS, "Authorization": f"Bearer {token}"}
     try:
         response = requests.post(
             f"{_base(config)}{path}", json=payload, headers=headers, timeout=TIMEOUT
         )
-        data = response.json()
-    except (requests.RequestException, ValueError) as exc:
+    except requests.RequestException as exc:
         raise MpesaError(f"M-Pesa could not be reached: {exc}") from exc
+    try:
+        return response.json()
+    except ValueError:
+        raise MpesaError(_blocked_message(response))
+
+
+def _post(config, path, payload):
+    data = _send(config, path, payload, _access_token(config))
+    if data.get("errorCode") == "404.001.03":  # "Invalid Access Token": try one fresh token
+        data = _send(config, path, payload, _access_token(config, refresh=True))
+        if data.get("errorCode") == "404.001.03":
+            raise MpesaError(
+                "Invalid Access Token. On the Daraja portal, open your app and make sure the "
+                "\"M-Pesa Express Sandbox\" (Lipa Na M-Pesa) product is ticked."
+            )
     return data
 
 
@@ -110,13 +177,13 @@ def stk_push(config, phone, amount, reference, description):
     """
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     payload = {
-        "BusinessShortCode": config["MPESA_SHORTCODE"],
+        "BusinessShortCode": _shortcode(config),
         "Password": _password(config, timestamp),
         "Timestamp": timestamp,
         "TransactionType": "CustomerPayBillOnline",
         "Amount": int(amount),
         "PartyA": phone,
-        "PartyB": config["MPESA_SHORTCODE"],
+        "PartyB": _shortcode(config),
         "PhoneNumber": phone,
         "CallBackURL": callback_url(config),
         "AccountReference": str(reference)[:12],
@@ -140,7 +207,7 @@ def stk_query(config, checkout_request_id):
     """
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     payload = {
-        "BusinessShortCode": config["MPESA_SHORTCODE"],
+        "BusinessShortCode": _shortcode(config),
         "Password": _password(config, timestamp),
         "Timestamp": timestamp,
         "CheckoutRequestID": checkout_request_id,
