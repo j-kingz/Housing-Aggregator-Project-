@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Verification requests{% endblock %}
+{% block content %}
+<h2 class="mb-1">Assigned verification requests</h2>
+<p class="text-muted mb-3">Report within 24 hours of being assigned. A late check is handed to another checker and can no longer be reported.</p>
+{% for item in requests %}
+<div class="panel p-3 mb-3">
+  <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+    <h5 class="mb-1">{{ item.listing.title }}</h5>
+    {% if item.due_at %}
+      {% if item.due_at - now <= soon %}
+        <span class="badge text-bg-danger"><i class="bi bi-alarm me-1"></i>Due {{ item.due_at|nairobi_time }}</span>
+      {% else %}
+        <span class="badge text-bg-light border"><i class="bi bi-clock me-1"></i>Due {{ item.due_at|nairobi_time }}</span>
+      {% endif %}
+    {% endif %}
+  </div>
+  <p class="text-muted">{{ item.listing.address }}, {{ item.listing.city }}</p>
+  <form method="post" action="{{ url_for('premium.submit_report', request_id=item.request_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <fieldset class="mb-3">
+      <legend class="form-label fs-6 fw-semibold">Is the unit vacant?</legend>
+      <div class="d-flex gap-2 flex-wrap">
+        <input type="radio" class="btn-check" name="verified_status" value="vacant"
+               id="vacant{{ item.request_id }}" autocomplete="off" required>
+        <label class="btn btn-outline-success" for="vacant{{ item.request_id }}">
+          <i class="bi bi-check-circle"></i> Confirmed vacant</label>
+        <input type="radio" class="btn-check" name="verified_status" value="occupied"
+               id="occupied{{ item.request_id }}" autocomplete="off">
+        <label class="btn btn-outline-danger" for="occupied{{ item.request_id }}">
+          <i class="bi bi-x-circle"></i> Not vacant</label>
+      </div>
+      <div class="form-text">The result is shown on the listing for every renter.</div>
+    </fieldset>
+
+    <label class="form-label fw-semibold" for="report{{ item.request_id }}">Report</label>
+    <textarea name="report" id="report{{ item.request_id }}" class="form-control mb-3" rows="3"
+              placeholder="What you checked: who you spoke to, when you visited, what you saw" required></textarea>
+
+    <div class="fw-semibold mb-1">Your contact details <span class="text-muted small fw-normal">(shown to the renter)</span></div>
+    <div class="row g-2 mb-3">
+      <div class="col-sm-4">
+        <label class="form-label small" for="cname{{ item.request_id }}">Name</label>
+        <input type="text" class="form-control" id="cname{{ item.request_id }}" name="contact_name"
+               value="{{ current_user.full_name }}" maxlength="120">
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label small" for="cphone{{ item.request_id }}">Phone</label>
+        <input type="tel" class="form-control" id="cphone{{ item.request_id }}" name="contact_phone"
+               value="{{ current_user.phonenumber or '' }}" placeholder="+254 712 345 678" maxlength="20" required>
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label small" for="cemail{{ item.request_id }}">Email <span class="text-muted">(optional)</span></label>
+        <input type="email" class="form-control" id="cemail{{ item.request_id }}" name="contact_email"
+               value="{{ current_user.email or '' }}" maxlength="120">
+      </div>
+    </div>
+    <button class="btn btn-primary">Submit report</button>
+  </form>
+</div>
+{% else %}<p class="text-muted">No assigned requests.</p>{% endfor %}
+{% endblock %}

@@ -41,9 +41,13 @@ class User(UserMixin, db.Model):
     lastname = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(100), nullable=False, unique=True)
     password = db.Column(db.String(255), nullable=False)  # hash only, never plain text
+    password_reset_token_hash = db.Column(db.String(64), unique=True)
+    password_reset_expires_at = db.Column(db.DateTime)
     phonenumber = db.Column(db.String(20))
     role_id = db.Column(db.Integer, db.ForeignKey("role.role_id"), nullable=False)
     status = db.Column(db.String(20), default="active")
+    verifier_approved = db.Column(db.Boolean, default=False, nullable=False)
+    verifier_available = db.Column(db.Boolean, default=False, nullable=False)
 
     role = db.relationship("Role", back_populates="users")
     renter = db.relationship("RenterDetails", back_populates="user", uselist=False)
@@ -274,7 +278,7 @@ class ScrapingRun(db.Model):
 
     run_id = db.Column(db.Integer, primary_key=True)
     source_id = db.Column(db.Integer, db.ForeignKey("scraping_source.source_id"), index=True)
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=utcnow)
     finished_at = db.Column(db.DateTime)
     status = db.Column(db.String(20), default="running")
     pages_fetched = db.Column(db.Integer, default=0)
@@ -371,7 +375,7 @@ class Payment(db.Model):
 
     payment_id = db.Column(db.Integer, primary_key=True)
     renter_id = db.Column(db.Integer, db.ForeignKey("renter_details.renter_id"), nullable=False)
-    listing_id = db.Column(db.Integer, db.ForeignKey("properties.listing_id"), nullable=False)
+    listing_id = db.Column(db.Integer, db.ForeignKey("properties.listing_id"))
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     date = db.Column(db.Date, default=date.today)
     modeofpayment = db.Column(db.String(50))
@@ -416,6 +420,63 @@ class Payment(db.Model):
         """The recipients as one readable string."""
         return ", ".join(self.proof_recipients) or None
     listing = db.relationship("Property", back_populates="payments")
+
+
+class PremiumSubscription(db.Model):
+    __tablename__ = "premium_subscription"
+
+    subscription_id = db.Column(db.Integer, primary_key=True)
+    renter_id = db.Column(db.Integer, db.ForeignKey("renter_details.renter_id"), nullable=False, index=True)
+    payment_id = db.Column(db.Integer, db.ForeignKey("payment.payment_id"), unique=True, nullable=False)
+    starts_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    status = db.Column(db.String(20), default="active", nullable=False)
+
+    renter = db.relationship("RenterDetails")
+    payment = db.relationship("Payment")
+
+    @property
+    def is_active(self):
+        return self.status == "active" and self.expires_at > utcnow()
+
+
+class VerificationRequest(db.Model):
+    __tablename__ = "verification_request"
+
+    request_id = db.Column(db.Integer, primary_key=True)
+    renter_id = db.Column(db.Integer, db.ForeignKey("renter_details.renter_id"), nullable=False, index=True)
+    listing_id = db.Column(db.Integer, db.ForeignKey("properties.listing_id"), nullable=False, index=True)
+    verifier_id = db.Column(db.Integer, db.ForeignKey("user.user_id"), index=True)
+    status = db.Column(db.String(20), default="assigned", nullable=False)
+    requested_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    assigned_at = db.Column(db.DateTime)
+    # the report is due by this time; after it the check is given to another
+    # verifier, or expires (see app/premium/services.py)
+    due_at = db.Column(db.DateTime, index=True)
+    reassign_count = db.Column(db.Integer, default=0)
+    completed_at = db.Column(db.DateTime)
+    # "vacant" or "occupied" (shown as "Not vacant"); older reports may say
+    # "unavailable" (the checker could not confirm)
+    verified_status = db.Column(db.String(20))
+    report = db.Column(db.Text)
+    # how the renter can reach the checker, typed in with the report
+    verifier_contact_name = db.Column(db.String(120))
+    verifier_contact_phone = db.Column(db.String(20))
+    verifier_contact_email = db.Column(db.String(120))
+
+    renter = db.relationship("RenterDetails")
+    listing = db.relationship("Property")
+    verifier = db.relationship("User")
+
+    @property
+    def is_overdue(self):
+        return self.status == "assigned" and self.due_at is not None and self.due_at <= utcnow()
+
+    @property
+    def result_label(self):
+        return {"vacant": "Vacant", "occupied": "Not vacant"}.get(
+            self.verified_status, "Could not confirm"
+        )
 
 
 class Favorite(db.Model):

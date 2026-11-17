@@ -12,7 +12,7 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env before starting}
       MYSQL_DATABASE: ${DB_NAME:-housing_aggregator_db}
     ports:
       # 3307 on your computer, so it does not clash with a MySQL already using 3306
@@ -31,7 +31,7 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      SECRET_KEY: ${SECRET_KEY:-change-this-before-you-deploy}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting}
       FLASK_DEBUG: "0"
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       MPESA_ENV: ${MPESA_ENV:-sandbox}
@@ -41,11 +41,24 @@ services:
       MPESA_PASSKEY: ${MPESA_PASSKEY:-}
       MPESA_CALLBACK_BASE_URL: ${MPESA_CALLBACK_BASE_URL:-}
       MPESA_RESERVATION_PERCENT: ${MPESA_RESERVATION_PERCENT:-10}
+      PREMIUM_SUBSCRIPTION_AMOUNT: ${PREMIUM_SUBSCRIPTION_AMOUNT:-500}
+      PREMIUM_SUBSCRIPTION_DAYS: ${PREMIUM_SUBSCRIPTION_DAYS:-30}
+      VERIFICATION_DEADLINE_HOURS: ${VERIFICATION_DEADLINE_HOURS:-24}
+      VERIFICATION_MAX_REASSIGNMENTS: ${VERIFICATION_MAX_REASSIGNMENTS:-2}
+      # email (password reset links, payment receipts)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      MAIL_SENDER: ${MAIL_SENDER:-}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       DB_HOST: db
       DB_PORT: "3306"
       DB_NAME: ${DB_NAME:-housing_aggregator_db}
       DB_USER: ${DB_USER:-root}
-      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env before starting}
     ports:
       - "5000:5000"
     depends_on:
@@ -66,12 +79,15 @@ services:
     command: python -m scraper.worker --every 30
     restart: unless-stopped
     environment:
-      SECRET_KEY: ${SECRET_KEY:-change-this-before-you-deploy}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting}
+      # the worker also enforces vacancy check deadlines; keep these the same as web
+      VERIFICATION_DEADLINE_HOURS: ${VERIFICATION_DEADLINE_HOURS:-24}
+      VERIFICATION_MAX_REASSIGNMENTS: ${VERIFICATION_MAX_REASSIGNMENTS:-2}
       DB_HOST: db
       DB_PORT: "3306"
       DB_NAME: ${DB_NAME:-housing_aggregator_db}
       DB_USER: ${DB_USER:-root}
-      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env before starting}
     depends_on:
       db:
         condition: service_healthy

@@ -1,15 +1,20 @@
 import re
+import hashlib
+import secrets
+from datetime import timedelta
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for, current_app
 from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
-from app.models import LandlordDetails, RenterDetails, Role, User
+from app.email import EmailDeliveryError, send_password_reset
+from app.models import LandlordDetails, RenterDetails, Role, User, utcnow
 
 auth_bp = Blueprint("auth", __name__)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_PASSWORD_LENGTH = 8
+PASSWORD_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$")
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])
@@ -36,6 +41,11 @@ def register():
         errors.append("That email address doesn't look right.")
     if len(password) < MIN_PASSWORD_LENGTH:
         errors.append(f"Password needs to be at least {MIN_PASSWORD_LENGTH} characters.")
+    elif not PASSWORD_RE.match(password):
+        errors.append(
+            "Password must include at least one uppercase letter, one lowercase letter, "
+            "one number and one special character."
+        )
     if password != confirm:
         errors.append("The two passwords don't match.")
     if account_type not in ("Renter", "Landlord"):
@@ -105,6 +115,55 @@ def login():
         return redirect(next_page)
 
     return render_template("auth/login.html", email="")
+
+
+@auth_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        user = User.query.filter_by(email=email, status="active").first()
+        if user:
+            raw_token = secrets.token_urlsafe(32)
+            user.password_reset_token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+            user.password_reset_expires_at = utcnow() + timedelta(minutes=30)
+            db.session.commit()
+            reset_url = url_for("auth.reset_password", token=raw_token, _external=True)
+            try:
+                send_password_reset(user, reset_url)
+            except EmailDeliveryError as exc:
+                current_app.logger.warning("Password reset email was not sent: %s", exc)
+        flash("If an active account uses that email, a password reset link has been sent.", "info")
+        return redirect(url_for("auth.login"))
+    return render_template("auth/forgot_password.html")
+
+
+@auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    user = User.query.filter_by(password_reset_token_hash=token_hash, status="active").first()
+    if not user or not user.password_reset_expires_at or user.password_reset_expires_at < utcnow():
+        flash("That password reset link is invalid or has expired.", "danger")
+        return redirect(url_for("auth.forgot_password"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(password) < MIN_PASSWORD_LENGTH or not PASSWORD_RE.match(password):
+            flash(
+                "Password must be at least 8 characters and include uppercase, lowercase, "
+                "a number and a special character.",
+                "danger",
+            )
+        elif password != confirm:
+            flash("The two passwords don't match.", "danger")
+        else:
+            user.set_password(password)
+            user.password_reset_token_hash = None
+            user.password_reset_expires_at = None
+            db.session.commit()
+            flash("Your password has been reset. You can log in now.", "success")
+            return redirect(url_for("auth.login"))
+    return render_template("auth/reset_password.html")
 
 
 @auth_bp.route("/logout", methods=["POST"])

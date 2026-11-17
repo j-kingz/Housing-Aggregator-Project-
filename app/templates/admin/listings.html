@@ -1,5 +1,5 @@
 {% extends "admin/_layout.html" %}
-{% from "_macros.html" import location %}
+{% from "_macros.html" import location, page_controls %}
 {% block title %}Listings | Admin{% endblock %}
 {% block admin_content %}
 <form method="get" class="row g-2 mb-3">
@@ -53,4 +53,5 @@
     </tbody>
   </table>
 </div>
+{{ page_controls(pagination, 'admin.listings', {'q': q} if q else {}) }}
 {% endblock %}

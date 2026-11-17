@@ -22,6 +22,7 @@ ROLES = [
     ("Renter", "Searches for housing and views price analytics"),
     ("Landlord", "Adds and manages their own property listings"),
     ("Administrator", "Manages user accounts and scraping sources"),
+    ("Verifier", "Performs paid vacancy checks for renters"),
 ]
 
 

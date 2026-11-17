@@ -20,26 +20,30 @@
 
 {% block content %}
 <form method="get" class="search-box">
+  <input type="hidden" name="search" value="1">
   <div class="row g-2">
     <div class="col-md-4">
-      <label class="form-label small text-muted mb-1" for="location">Where in Kenya</label>
+      <label class="form-label small text-muted mb-1" for="location">Place <span class="required-star" aria-hidden="true">*</span></label>
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
-        <input type="text" id="location" name="location" class="form-control"
+        <input type="text" id="location" name="location" class="form-control" required
                placeholder="County, town, estate, mall or building" value="{{ location_label }}"
                data-suggest="place" data-google data-lat="#place_lat" data-lng="#place_lng"
-               data-county-field="#county">
+               data-county-field="#county" data-county-any>
       </div>
-      <input type="hidden" id="county" name="county" value="{{ county }}">
     </div>
     <div class="col-md-3">
-      <label class="form-label small text-muted mb-1" for="area">Neighbourhood</label>
+      <label class="form-label small text-muted mb-1" for="county_display">County</label>
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-signpost-split"></i></span>
-        <input type="text" id="area" name="area" class="form-control"
-               placeholder="Start typing, e.g. Kilimani" value="{{ area }}"
-               data-suggest="area" data-require-match data-county-from="#location">
+        {# filled in from the place picked in the Place box; never typed #}
+        <input type="text" id="county_display" class="form-control county-auto" readonly tabindex="-1"
+               placeholder="Filled in from the place" aria-live="polite"
+               value="{{ county ~ ' County' if county else '' }}">
       </div>
+      <input type="hidden" id="county" name="county" value="{{ county }}"
+             data-display="#county_display"
+             data-counties='{{ counties | map(attribute=0) | list | tojson }}'>
     </div>
     <div class="col-md-2">
       <label class="form-label small text-muted mb-1" for="max_price">Max rent</label>
@@ -52,12 +56,13 @@
       <input type="hidden" id="place_lng" name="place_lng" value="{{ place_lng }}">
     </div>
     <div class="col-md-2">
-      <label class="form-label small text-muted mb-1" for="bedrooms">Bedrooms</label>
-      <select id="bedrooms" name="bedrooms" class="form-select">
-        <option value="">Any</option>
+      <label class="form-label small text-muted mb-1" for="bedrooms">Bedrooms <span class="required-star" aria-hidden="true">*</span></label>
+      <select id="bedrooms" name="bedrooms" class="form-select" required>
+        <option value="" disabled {% if bedrooms == "" %}selected{% endif %}>Choose</option>
         {% for n in range(1, 5) %}
-          <option value="{{ n }}" {% if bedrooms == n %}selected{% endif %}>{{ n }}+</option>
+          <option value="{{ n }}" {% if bedrooms == n %}selected{% endif %}>{{ n }}</option>
         {% endfor %}
+        <option value="0" {% if bedrooms == 0 %}selected{% endif %}>Bedsitter / studio</option>
       </select>
     </div>
     <div class="col-md-1 d-grid align-self-end">
@@ -123,6 +128,21 @@
     </div>
   </div>
 </form>
+
+<script>
+  (() => {
+    const message = 'Please add an input or selection in this field';
+    const form = document.querySelector('.search-box');
+    if (!form) return;
+    const requiredFields = form.querySelectorAll('[required]');
+    requiredFields.forEach(field => {
+      field.addEventListener('invalid', () => field.setCustomValidity(message));
+      field.addEventListener(field.tagName === 'SELECT' ? 'change' : 'input', () => {
+        field.setCustomValidity('');
+      });
+    });
+  })();
+</script>
 
 {% for n in notices %}
   <div class="alert alert-info py-2 small"><i class="bi bi-info-circle me-1"></i>{{ n }}</div>

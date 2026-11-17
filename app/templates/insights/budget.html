@@ -170,7 +170,7 @@
 
             <div class="d-flex gap-2">
               <a class="btn btn-sm btn-primary flex-fill" href="{{ url_for('listings.detail', listing_id=l.listing_id) }}">View</a>
-              {% if l.availability_status in ('vacant', 'unknown') %}
+              {% if l.availability_status == 'vacant' %}
                 <a class="btn btn-sm btn-outline-success flex-fill" href="{{ url_for('payments.pay', listing_id=l.listing_id) }}"><i class="bi bi-phone"></i> Reserve</a>
               {% endif %}
             </div>

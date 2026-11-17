@@ -10,7 +10,10 @@
  *   data-google          also show Google Maps place suggestions (needs the key)
  *   data-lat / data-lng  selectors of hidden inputs to fill with the GPS point
  *   data-area-id         selector of a hidden input to fill with the area id
- *   data-county-field    selector of a hidden input to fill when a county is picked
+ *   data-county-field    selector of a hidden input to fill with the county of the
+ *                        picked place. On that input, data-display points at a
+ *                        read-only box that shows it, and data-counties lists the
+ *                        county names used to read the county from an address.
  *   data-county-from     selector of a text box whose picked county limits these suggestions
  */
 (function () {
@@ -43,6 +46,9 @@
       this.idField = input.dataset.areaId ? document.querySelector(input.dataset.areaId) : null;
       this.countyField = input.dataset.countyField ? document.querySelector(input.dataset.countyField) : null;
       this.countyFrom = input.dataset.countyFrom ? document.querySelector(input.dataset.countyFrom) : null;
+      // data-county-any: fill the county for every kind of place (buildings, map
+      // places), not only for counties and neighbourhoods
+      this.countyAny = input.hasAttribute('data-county-any');
       this.items = [];
       this.active = -1;
       this.chosen = input.value.trim() !== '';   // a value that came from the server is already valid
@@ -102,6 +108,38 @@
       this.input.dispatchEvent(new CustomEvent('ta-point', {bubbles: true, detail: {lat, lng, areaId}}));
     }
 
+    /* Fill the county field (and the box that shows it); '' clears both. */
+    setCounty(name) {
+      if (!this.countyField) return;
+      this.countyField.value = name || '';
+      const display = this.countyField.dataset.display
+        ? document.querySelector(this.countyField.dataset.display) : null;
+      if (display) display.value = name ? `${name} County` : '';
+    }
+
+    countyNames() {
+      const field = this.countyField;
+      if (!field) return [];
+      if (field.options) return Array.from(field.options).map(o => o.value).filter(Boolean);
+      try { return JSON.parse(field.dataset.counties || '[]'); } catch (e) { return []; }
+    }
+
+    /* The county named in an address: "Westlands, Nairobi, Kenya" -> Nairobi. */
+    selectCountyFromText(text) {
+      if (!this.countyField || !text) return;
+      const key = s => ` ${String(s).toLowerCase().replace(/[-,]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+      const haystack = key(text);
+      // whole words only. Addresses run from the street to the county, so the
+      // county named furthest right wins ("Kiambu Rd, Nairobi" is in Nairobi);
+      // on a tie the longer name wins.
+      let found = '', at = -1;
+      this.countyNames().forEach(name => {
+        const i = haystack.lastIndexOf(key(name));
+        if (i > at || (i === at && i >= 0 && name.length > found.length)) { found = name; at = i; }
+      });
+      this.setCounty(found);
+    }
+
     showHint(text) {
       this.hint.textContent = text || '';
       this.hint.hidden = !text;
@@ -141,7 +179,7 @@
       this.chosen = false;
       if (this.kind === 'place') this.setPoint(null, null, null);
       this.input.dataset.county = '';
-      if (this.countyField) this.countyField.value = '';
+      this.setCounty('');                        // new text: the county is not known yet
       const mine = ++this.token;
       const [local, google] = await Promise.all([this.fetchLocal(q), this.fetchGoogle(q)]);
       if (mine !== this.token) return;           // a newer keystroke is already being handled
@@ -206,6 +244,7 @@
           await place.fetchFields({fields: ['location', 'displayName', 'formattedAddress']});
           this.input.value = place.displayName || item.label;
           if (place.location) this.setPoint(place.location.lat(), place.location.lng(), null);
+          if (this.countyAny) this.selectCountyFromText(place.formattedAddress || item.label);
           this.session = null;
           this.input.dispatchEvent(new CustomEvent('ta-place', {bubbles: true, detail: {
             name: place.displayName, address: place.formattedAddress,
@@ -214,10 +253,13 @@
       } else if (item.type === 'county') {
         // a whole county: search by county, not by a circle around its town
         this.input.dataset.county = item.county;
-        if (this.countyField) this.countyField.value = item.county;
+        this.setCounty(item.county);
         this.setPoint(null, null, null);
         this.input.dispatchEvent(new CustomEvent('ta-place', {bubbles: true, detail: item}));
       } else {
+        // neighbourhoods, buildings and map places carry their county when it is known
+        if (item.county && (this.countyAny || item.type === 'area')) this.setCounty(item.county);
+        else if (this.countyAny) this.selectCountyFromText(`${item.label}, ${item.detail || ''}`);
         this.setPoint(item.lat, item.lng, item.area_id);
         this.input.dispatchEvent(new CustomEvent('ta-place', {bubbles: true, detail: item}));
       }

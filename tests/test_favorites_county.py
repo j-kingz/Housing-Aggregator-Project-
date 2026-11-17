@@ -112,6 +112,51 @@ class TestCounties:
         assert "Ruaka flat" in page
         assert "Kiambu County" in page      # the box shows the county back
 
+    # -- the county box fills itself from the place -----------------------
+    def test_a_county_is_read_from_an_address(self, app):
+        assert places.county_in_text("Westlands, Nairobi County") == "Nairobi"
+        assert places.county_in_text("Sarit Centre, Westlands, Nairobi, Kenya") == "Nairobi"
+        assert places.county_in_text("Kapenguria, West Pokot") == "West Pokot"
+        assert places.county_in_text("Voi, Taita Taveta County") == "Taita-Taveta"
+        assert places.county_in_text(None, "", "Kisumu") == "Kisumu"
+        # a road named after one county, inside another: the county comes last
+        assert places.county_in_text("Kiambu Road, Nairobi, Kenya") == "Nairobi"
+        # whole words only, and a town that is not a county gives nothing
+        assert places.county_in_text("Embulbul") is None
+        assert places.county_in_text("Thika") is None
+
+    def test_a_neighbourhood_suggestion_carries_a_real_county_only(self, app, areas):
+        self.add_area("Ruaka", "Kiambu")
+        db.session.add(Area(name="Makongeni", city="Thika", latitude=-1.04, longitude=37.08))
+        db.session.commit()
+        by_name = {i["label"]: i for i in places.suggest_areas("")}
+        assert by_name["Ruaka"]["county"] == "Kiambu"
+        assert by_name["Westlands"]["county"] == "Nairobi"   # from its city
+        assert by_name["Makongeni"]["county"] is None        # "Thika" is not a county
+
+    def test_a_building_suggestion_carries_its_county(self, app, areas):
+        self.add_area("Ruaka", "Kiambu")
+        ruaka = Area.query.filter_by(name="Ruaka").one()
+        add_unit(building_name="Ruaka Heights", area_id=ruaka.area_id, room_number="1")
+        building = next(i for i in places.suggest_places("ruaka heights", external=False)
+                        if i["type"] == "building")
+        assert building["county"] == "Kiambu"
+
+    def test_a_typed_building_fills_the_county_on_the_server(self, client, app, areas):
+        self.add_area("Ruaka", "Kiambu")
+        ruaka = Area.query.filter_by(name="Ruaka").one()
+        add_unit(title="Ruaka flat", building_name="Ruaka Heights", area_id=ruaka.area_id,
+                 room_number="1", bedrooms=2)
+        page = client.get("/?search=1&location=Ruaka%20Heights&bedrooms=2").get_data(as_text=True)
+        assert 'value="Kiambu County"' in page
+        assert "Ruaka flat" in page
+
+    def test_an_unknown_place_leaves_the_county_empty_but_still_searches(self, client, app, areas):
+        add_unit(title="Garden flat", address="Somewhere Gardens", room_number="1", bedrooms=2)
+        page = client.get("/?search=1&location=Somewhere%20Gardens&bedrooms=2").get_data(as_text=True)
+        assert 'name="county" value=""' in page
+        assert "Garden flat" in page
+
 
 class TestVacancyTabs:
     def test_the_tabs_count_each_kind(self, client, app, areas):
@@ -131,12 +176,12 @@ class TestVacancyTabs:
 
 
 class TestNotConfirmedGuidance:
-    def test_the_detail_page_sends_the_person_to_the_original_advert(self, client, app, areas):
+    def test_the_detail_page_keeps_the_person_inside_the_platform(self, client, app, areas):
         unit = add_unit(availability_status="unknown", source_url="https://example.com/ad/1", source_name="Jiji")
         page = client.get(f"/listings/{unit.listing_id}").get_data(as_text=True)
         assert "We could not confirm this unit is free" in page
-        assert 'href="https://example.com/ad/1"' in page
-        assert "agent" in page
+        assert "Log in to request verification" in page
+        assert "https://example.com/ad/1" not in page
 
     def test_a_vacant_unit_has_no_warning(self, client, app, areas):
         unit = add_unit(availability_status="vacant", source_url="https://example.com/ad/1")
@@ -146,7 +191,7 @@ class TestNotConfirmedGuidance:
     def test_the_search_card_tells_you_to_check(self, client, app, areas):
         add_unit(availability_status="unknown")
         page = client.get("/").get_data(as_text=True)
-        assert "Not confirmed. Open this home" in page
+        assert "Not confirmed" in page
 
 
 class TestMapsShowEverything:

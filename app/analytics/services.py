@@ -8,10 +8,11 @@ The functions work on plain rows and dictionaries so they can be unit tested
 without touching the database.
 """
 
+from collections import Counter
 from datetime import date, timedelta
 from statistics import median
 
-from app.models import MarketSnapshot, Property
+from app.models import Area, MarketSnapshot, Property
 
 # How far from the neighbourhood average a listing has to sit before it is
 # called out as cheap or expensive
@@ -21,6 +22,15 @@ DEAR_THRESHOLD = 10.0  # percent
 # A price comparison needs a few listings to be worth making. Below this the
 # platform says it does not know rather than comparing against noise.
 MINIMUM_SAMPLE = 3
+
+
+def to_bedrooms(value):
+    """Parse the selected bedroom count used by the analytics filter."""
+    try:
+        bedrooms = int(value)
+    except (TypeError, ValueError):
+        return None
+    return bedrooms if 0 <= bedrooms <= 50 else None
 
 
 def _rent(value):
@@ -68,17 +78,28 @@ def summarise(listings):
     }
 
 
-def area_benchmarks(city=None, minimum=1):
+def area_benchmarks(city=None, minimum=1, listings=None):
     """One benchmark row per neighbourhood.
 
     Returns a list of dictionaries sorted by average rent, highest first.
     """
-    query = Property.query.filter(Property.is_active.is_(True))
-    if city:
-        query = query.filter(Property.city == city)
-
     grouped = {}
-    for listing in query.all():
+    if listings is None:
+        # only the columns used below; loading whole rows (with the long
+        # description text) on every page view gets slow as listings grow
+        query = Property.query.filter(Property.is_active.is_(True))
+        if city:
+            query = query.filter(Property.city == city)
+        listings = (
+            query.outerjoin(Area, Property.area_id == Area.area_id)
+            .with_entities(
+                Property.address, Property.city, Property.rentamount,
+                Property.bedrooms, Property.category,
+                Area.county.label("county"),
+            )
+            .all()
+        )
+    for listing in listings:
         key = (listing.address or "Unspecified", listing.city)
         grouped.setdefault(key, []).append(listing)
 
@@ -87,7 +108,17 @@ def area_benchmarks(city=None, minimum=1):
         if len(listings) < minimum:
             continue
         stats = summarise(listings)
-        stats.update({"area": area_name, "city": area_city})
+        # the county most of the group's listings are in, for the county fallback
+        county = Counter(_county_name(item) for item in listings).most_common(1)[0][0]
+        # the rents of each kind of home, so a listing is only ever judged
+        # against homes like it (a bedsitter never against a 5 bedroom house)
+        by_type = {}
+        for item in listings:
+            rent = _rent(item.rentamount)
+            if rent > 0:
+                by_type.setdefault(unit_type(item), []).append(rent)
+        stats.update({"area": area_name, "city": area_city, "county": county,
+                      "by_type": by_type})
         results.append(stats)
 
     results.sort(key=lambda row: row["average"], reverse=True)
@@ -204,6 +235,13 @@ def county_of(listing):
     return county or listing.city or "Unspecified"
 
 
+def _county_name(item):
+    """county_of() for a full listing or a light row that carries a county column."""
+    if isinstance(item, Property):
+        return county_of(item)
+    return getattr(item, "county", None) or getattr(item, "city", None) or "Unspecified"
+
+
 def _by_county(listings):
     """{county: [listings]}, the county with the most listings first."""
     groups = {}
@@ -293,19 +331,23 @@ def price_trend_by_county(listings):
     return {name: price_trend_by_type(group) for name, group in _by_county(listings).items()}
 
 
-def price_trend(city=None, area=None, months=12):
+def price_trend(city=None, area=None, months=12, listings=None):
     """Average rent per month, oldest first, from the listing dates.
 
-    This is the "market trends" chart on the dashboard.
+    Pass `listings` to chart a set already chosen (the area page does, so the
+    chart covers exactly the listings shown); otherwise they are looked up by
+    city and address.
     """
-    query = Property.query.filter(Property.is_active.is_(True))
-    if city:
-        query = query.filter(Property.city == city)
-    if area:
-        query = query.filter(Property.address == area)
+    if listings is None:
+        query = Property.query.filter(Property.is_active.is_(True))
+        if city:
+            query = query.filter(Property.city == city)
+        if area:
+            query = query.filter(Property.address == area)
+        listings = query.with_entities(Property.listingdate, Property.rentamount).all()
 
     buckets = {}
-    for listing in query.all():
+    for listing in listings:
         if not listing.listingdate:
             continue
         key = (listing.listingdate.year, listing.listingdate.month)
@@ -328,42 +370,51 @@ def price_trend(city=None, area=None, months=12):
 
 
 def listing_verdict(listing, benchmarks=None):
-    """Judge one listing against the market around it.
+    """Judge one listing against similar homes around it.
 
-    Returns a dictionary with the verdict, how far from the average the rent
-    is, and the neighbourhood figures it was compared to. When the area has
-    too few listings to be meaningful the city average is used instead.
+    Only homes of the same kind are compared (see unit_type: a bedsitter with
+    bedsitters, a 2 bedroom with 2 bedrooms ...), first in the neighbourhood,
+    then the county, then the city, using the first that has at least
+    MINIMUM_SAMPLE such homes. The rent is compared with their median (the
+    middle rent). Returns the verdict, how far from the median the rent is,
+    and the figures it was compared to.
     """
     if benchmarks is None:
         benchmarks = area_benchmarks()
 
-    by_area = {}
-    for row in benchmarks:
-        by_area.setdefault((row["area"], row["city"]), row)
+    kind = unit_type(listing)
 
-    city_rows = [row for row in benchmarks if row["city"] == listing.city]
-    city_count = sum(row["count"] for row in city_rows)
-    city_average = (
-        sum(row["average"] * row["count"] for row in city_rows) / city_count
-        if city_rows
-        else 0.0
-    )
+    def rents_of(rows):
+        rents = []
+        for row in rows:
+            rents.extend(row.get("by_type", {}).get(kind, []))
+        return rents
 
-    area_row = by_area.get((listing.address, listing.city))
+    area_rows = [row for row in benchmarks
+                 if row["area"] == (listing.address or "Unspecified") and row["city"] == listing.city]
+    # the county: neighbourhoods with only one or two listings (Ruaka, Juja,
+    # Kitengela ...) are compared with their whole county instead of nothing
+    county = county_of(listing)
+    county_rows = [row for row in benchmarks if row.get("county") == county] \
+        if county != "Unspecified" else []
+    city_rows = [row for row in benchmarks if row["city"] == listing.city] if listing.city else []
+
     benchmark = None
-    scope = "city"
-
-    if area_row and area_row["count"] >= MINIMUM_SAMPLE:
-        benchmark = area_row
-        scope = "area"
-    elif city_count >= MINIMUM_SAMPLE:
-        benchmark = {
-            "area": listing.city,
-            "city": listing.city,
-            "average": city_average,
-            "median": city_average,
-            "count": city_count,
-        }
+    scope = "area"
+    for scope, name, rows in (
+        ("area", listing.address, area_rows),
+        ("county", county, county_rows),
+        ("city", listing.city, city_rows),
+    ):
+        rents = rents_of(rows)
+        if len(rents) >= MINIMUM_SAMPLE:
+            benchmark = {
+                "area": name,
+                "average": sum(rents) / len(rents),
+                "median": median(rents),
+                "count": len(rents),
+            }
+            break
 
     if not benchmark or not benchmark["average"]:
         return {
@@ -372,10 +423,14 @@ def listing_verdict(listing, benchmarks=None):
             "difference_percent": None,
             "benchmark_average": None,
             "benchmark_count": 0,
+            "unit_type": kind,
             "scope": scope,
         }
 
-    difference = ((_rent(listing.rentamount) - benchmark["average"]) / benchmark["average"]) * 100
+    # compared with the median (the middle rent), not the average: a few very
+    # dear homes pull the average up and made most ordinary homes look "cheap"
+    typical = benchmark["median"] or benchmark["average"]
+    difference = ((_rent(listing.rentamount) - typical) / typical) * 100
 
     if difference <= CHEAP_THRESHOLD:
         verdict, label = "cheap", "Below market"
@@ -391,6 +446,8 @@ def listing_verdict(listing, benchmarks=None):
         "benchmark_average": benchmark["average"],
         "benchmark_median": benchmark.get("median"),
         "benchmark_count": benchmark["count"],
+        "benchmark_area": benchmark.get("area"),
+        "unit_type": kind,
         "scope": scope,
     }
 
@@ -425,7 +482,7 @@ def record_snapshot(city=None, area=None, area_id=None):
     if area:
         query = query.filter(Property.address == area)
 
-    listings = query.all()
+    listings = query.with_entities(Property.rentamount).all()
     if not listings:
         return None
 

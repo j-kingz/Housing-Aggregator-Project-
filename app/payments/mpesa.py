@@ -38,6 +38,14 @@ RESULT_MESSAGES = {
 }
 
 
+# Replies from the STK query API that mean "the customer has not finished yet",
+# not a final result. Daraja sends ResultCode 4999 ("The transaction is still
+# under processing") while the PIN prompt is still open on the phone; treating
+# it as a failure marked payments failed seconds before the PIN was entered.
+STILL_PROCESSING_CODES = {4999}
+STILL_PROCESSING_ERRORS = {"500.001.1001"}
+
+
 class MpesaError(Exception):
     """Raised when Safaricom could not be reached or refused the request."""
 
@@ -56,6 +64,14 @@ def normalise_phone(raw):
     if re.fullmatch(r"254(7|1)\d{8}", digits):
         return digits
     return None
+
+
+def local_part(raw):
+    """The 9 digits that follow +254 (e.g. 712345678), for the phone field."""
+    phone = normalise_phone(raw)
+    if phone:
+        return phone[3:]
+    return re.sub(r"[^\d]", "", str(raw or ""))[:10]
 
 
 def callback_token(config):
@@ -213,10 +229,16 @@ def stk_query(config, checkout_request_id):
         "CheckoutRequestID": checkout_request_id,
     }
     data = _post(config, "/mpesa/stkpushquery/v1/query", payload)
-    if "ResultCode" not in data:
-        # "The transaction is being processed" comes back as an error body
+    if "ResultCode" not in data or data.get("errorCode") in STILL_PROCESSING_ERRORS:
+        # "The transaction is being processed" comes back as an error body;
+        # so do rate-limit replies. Neither is a result, so keep waiting.
         return None
-    code = int(data["ResultCode"])
+    try:
+        code = int(data["ResultCode"])
+    except (TypeError, ValueError):
+        return None
+    if code in STILL_PROCESSING_CODES:
+        return None
     return {"code": code, "description": data.get("ResultDesc") or RESULT_MESSAGES.get(code, "")}
 
 

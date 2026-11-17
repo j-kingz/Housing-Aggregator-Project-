@@ -65,10 +65,13 @@
       <label class="form-label" for="phone">Your M-Pesa phone number</label>
       <div class="input-group mb-1">
         <span class="input-group-text"><i class="bi bi-telephone"></i></span>
-        <input type="tel" id="phone" name="phone" class="form-control" placeholder="0712 345 678"
-               value="{{ phone }}" required autocomplete="tel">
+        <span class="input-group-text">+254</span>
+        <input type="tel" id="phone" name="phone" class="form-control" placeholder="712 345 678"
+               value="{{ phone }}" required
+               pattern="0?[17][0-9]{8}" maxlength="10" inputmode="numeric" autocomplete="tel"
+               title="The 9 digits after +254, for example 712345678">
       </div>
-      <div class="form-text mb-3">A prompt appears on this phone. Enter your M-Pesa PIN to approve.</div>
+      <div class="form-text mb-3">Enter the 9 digits after +254. A prompt appears on this phone; enter your M-Pesa PIN to approve.</div>
 
       <label class="form-label" for="receipt_email">Also send a copy of the proof to <span class="text-muted small">(optional)</span></label>
       <input type="text" id="receipt_email" name="receipt_email" class="form-control mb-1"

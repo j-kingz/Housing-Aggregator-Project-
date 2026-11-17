@@ -27,8 +27,12 @@
 
     <div id="statePaid" {% if payment.status != 'paid' %}hidden{% endif %}>
       <div class="display-4 text-success mb-2"><i class="bi bi-check-circle-fill"></i></div>
-      <h4>Unit reserved</h4>
-      <p class="mb-1">KSh {{ "{:,.0f}".format(payment.amount) }} received.</p>
+      <h4>{{ 'Premium activated' if payment.purpose in ('premium_subscription', 'premium_subscription_demo') else 'Unit reserved' }}</h4>
+      {% if payment.purpose in ('premium_subscription', 'premium_subscription_demo') %}
+        <p class="mb-1">Payment of KShs {{ "{:,.0f}".format(payment.amount) }} received, you now have access to premium subscription.</p>
+      {% else %}
+        <p class="mb-1">KSh {{ "{:,.0f}".format(payment.amount) }} received.</p>
+      {% endif %}
       <p class="text-muted small">M-Pesa receipt: <strong id="receipt">{{ payment.mpesa_receipt or '' }}</strong></p>
       {% if payment.simulated %}<p class="badge text-bg-warning">Demo payment, no real money moved</p>{% endif %}
       {% if payment.is_custom_amount %}
@@ -53,7 +57,13 @@
       <div class="display-4 text-danger mb-2"><i class="bi bi-x-circle-fill"></i></div>
       <h4 id="failTitle">{{ 'Payment cancelled' if payment.status == 'cancelled' else 'Payment not completed' }}</h4>
       <p class="text-muted" id="failReason">{{ payment.result_desc or '' }}</p>
-      {% if listing %}
+      {% if not payment.simulated and payment.checkout_request_id and current_user.user_id == payment.renter_id %}
+        <p class="small">Already entered your PIN and got an M-Pesa confirmation SMS?
+          <a href="{{ url_for('payments.status', payment_id=payment.payment_id) }}">Check again with M-Pesa</a></p>
+      {% endif %}
+      {% if payment.purpose in ('premium_subscription', 'premium_subscription_demo') %}
+        <a class="btn btn-success" href="{{ url_for('premium.subscribe') }}">Try again</a>
+      {% elif listing %}
         <a class="btn btn-success" href="{{ url_for('payments.pay', listing_id=listing.listing_id) }}">Try again</a>
       {% endif %}
     </div>

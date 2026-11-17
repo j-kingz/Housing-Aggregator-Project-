@@ -34,6 +34,9 @@ BACKFILL_DEFAULTS = {
         "enabled": "1",
         "respects_robots": "1",
     },
+    "verification_request": {
+        "reassign_count": "0",
+    },
 }
 
 
@@ -133,9 +136,26 @@ def widen_columns():
     return changed
 
 
+def make_payment_listing_optional():
+    """Allow premium payments that are not tied to a property listing."""
+    if db.engine.dialect.name != "mysql" or "payment" not in _existing_tables():
+        return False
+    column = next(
+        (c for c in inspect(db.engine).get_columns("payment") if c["name"] == "listing_id"),
+        None,
+    )
+    if column is None or column.get("nullable", True):
+        return False
+    db.session.execute(text("ALTER TABLE `payment` MODIFY `listing_id` INT NULL"))
+    db.session.commit()
+    return True
+
+
 def run_migrations():
     """Bring an existing database up to the current schema. Safe to re-run."""
     create_missing_tables()
     added = add_missing_columns() + widen_columns()
+    if make_payment_listing_optional():
+        added.append("payment.listing_id nullable")
     backfilled = backfill_defaults()
     return added, backfilled

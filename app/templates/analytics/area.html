@@ -155,7 +155,9 @@
         plugins: {legend: {display: false}},
         scales: {
           x: {grid: {display: false}},
-          y: {grid: {color: grid}, ticks: {callback: (v) => (v / 1000) + 'k'}}
+          // from KSh 0, so the size of a change in rent is drawn honestly
+          y: {beginAtZero: true, min: 0, grid: {color: grid},
+              ticks: {callback: (v) => (v === 0 ? '0' : (v / 1000) + 'k')}}
         }
       }
     });

@@ -3,10 +3,12 @@ from functools import wraps
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
+from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models import LandlordDetails, Property, Role, ScrapingRun, ScrapingSource, User
 from scraper import parser as scrape_parser
+from scraper.url_safety import UnsafeUrlError, validate_public_https_url
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -114,6 +116,21 @@ def verify_landlord(user_id):
     return redirect(url_for("admin.users"))
 
 
+@admin_bp.route("/users/<int:user_id>/verifier", methods=["POST"])
+@admin_required
+def toggle_verifier(user_id):
+    user = db.get_or_404(User, user_id)
+    user.verifier_approved = not user.verifier_approved
+    user.verifier_available = user.verifier_approved
+    db.session.commit()
+    flash(
+        f"{user.full_name} is now "
+        f"{'an approved verifier' if user.verifier_approved else 'not an approved verifier'}.",
+        "success",
+    )
+    return redirect(url_for("admin.users"))
+
+
 @admin_bp.route("/listings")
 @admin_required
 def listings():
@@ -124,8 +141,17 @@ def listings():
         like = f"%{q}%"
         query = query.filter(or_(Property.title.ilike(like), Property.city.ilike(like), Property.address.ilike(like)))
 
-    all_listings = query.order_by(Property.listing_id.desc()).all()
-    return render_template("admin/listings.html", listings=all_listings, q=q)
+    # one page at a time, with the landlord names loaded together instead of
+    # two extra queries per row
+    page = request.args.get("page", 1, type=int)
+    pagination = (
+        query.options(selectinload(Property.landlord).selectinload(LandlordDetails.user))
+        .order_by(Property.listing_id.desc())
+        .paginate(page=page, per_page=50, error_out=False)
+    )
+    return render_template(
+        "admin/listings.html", listings=pagination.items, pagination=pagination, q=q
+    )
 
 
 @admin_bp.route("/listings/<int:listing_id>/delete", methods=["POST"])
@@ -180,6 +206,14 @@ def add_source():
     if ScrapingSource.query.filter_by(name=name).first():
         flash("A source with that name already exists.", "danger")
         return redirect(url_for("admin.sources"))
+    try:
+        if base_url:
+            base_url = validate_public_https_url(base_url, "Base URL")
+        if listing_url:
+            listing_url = validate_public_https_url(listing_url, "Listing URL")
+    except UnsafeUrlError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.sources"))
 
     source = ScrapingSource(
         name=name,
@@ -206,6 +240,15 @@ def update_source(source_id):
 
     source.base_url = request.form.get("base_url", "").strip() or None
     source.listing_url = request.form.get("listing_url", "").strip() or None
+    try:
+        if source.base_url:
+            source.base_url = validate_public_https_url(source.base_url, "Base URL")
+        if source.listing_url:
+            source.listing_url = validate_public_https_url(source.listing_url, "Listing URL")
+    except UnsafeUrlError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.sources"))
     source.profile = request.form.get("profile", source.profile).strip() or "generic"
     source.delay_seconds = _number(request.form.get("delay_seconds"), source.delay_seconds or 5.0)
     source.max_pages = _number(request.form.get("max_pages"), source.max_pages or 3)

@@ -30,6 +30,10 @@ Create a `.env` file next to `docker-compose.yml` and set values that are
 appropriate for the deployment. In particular, replace the example database
 password and secret key.
 
+`docker compose up` refuses to start unless both `SECRET_KEY` and
+`DB_PASSWORD` are set. Use long, random values and do not use the example
+values from `.env.example` in a shared or production environment.
+
 Start the services with:
 
 ```powershell
@@ -60,5 +64,5 @@ Before a demonstration or release:
 6. Confirm the scraper obeys `robots.txt` and records failures.
 7. Review the latest source URLs and listing prices for invalid data.
 
-Do not use the development fallback secret or the example database password
-in a shared or production environment.
+The application runs with Flask debug mode disabled by default. Enable it only
+explicitly for local development with `FLASK_DEBUG=1`.

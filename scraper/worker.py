@@ -21,6 +21,18 @@ def run_once():
     """Run every enabled source once and report what happened."""
     app = create_app()
     with app.app_context():
+        # vacancy checks past their deadline are reassigned or closed even when
+        # nobody opens a premium page
+        try:
+            from app.premium.services import enforce_deadlines
+
+            enforce_deadlines()
+        except Exception:  # noqa: BLE001 - never let this stop the scrape
+            log.exception("Could not enforce vacancy check deadlines")
+            from app.extensions import db
+
+            db.session.rollback()
+
         results = run_all()
         for source, summary in results:
             log.info(

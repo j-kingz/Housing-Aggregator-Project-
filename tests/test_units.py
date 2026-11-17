@@ -41,6 +41,20 @@ class TestSearchShowsTheUnit:
         assert "Free flat" in page
         assert "Taken flat" not in page
 
+    def test_bedroom_search_matches_the_selected_count_exactly(self, client, app, areas):
+        add_unit(title="One bedroom", bedrooms=1)
+        add_unit(title="Two bedrooms", bedrooms=2)
+        page = client.get("/?area=Westlands&bedrooms=1").get_data(as_text=True)
+        assert "One bedroom" in page
+        assert "Two bedrooms" not in page
+
+    def test_bedroom_search_explains_when_the_selected_count_is_unavailable(
+        self, client, app, areas
+    ):
+        add_unit(title="Two bedrooms", bedrooms=2)
+        page = client.get("/?area=Westlands&bedrooms=1").get_data(as_text=True)
+        assert "No 1-bedroom homes are currently listed in Westlands." in page
+
     def test_a_misspelt_neighbourhood_is_corrected_not_empty(self, client, app, areas):
         add_unit(title="Westlands flat")
         page = client.get("/?area=westlnds").get_data(as_text=True)

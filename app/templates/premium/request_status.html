@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Vacancy verification{% endblock %}
+{% block content %}
+<div class="panel p-4">
+  <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+    <h3 class="mb-1">{{ verification.listing.title }}</h3>
+    {% if verification.status == 'completed' %}
+      <button type="button" class="btn btn-sm btn-outline-secondary d-print-none" onclick="window.print()">
+        <i class="bi bi-printer"></i> Print report</button>
+    {% endif %}
+  </div>
+  <p class="text-muted">{{ verification.listing.address }}{% if verification.listing.city %}, {{ verification.listing.city }}{% endif %}</p>
+
+  {% if verification.status == 'expired' %}
+    <div class="alert alert-warning">
+      No checker could report on this unit within 24 hours, so the check was closed.
+      <a href="{{ url_for('listings.detail', listing_id=verification.listing_id) }}">Request a new check</a>
+      from the listing page.
+    </div>
+
+  {% elif verification.status == 'completed' %}
+    <h5 class="mb-2">Vacancy report</h5>
+    {% if verification.verified_status == 'vacant' %}
+      <div class="alert alert-success d-flex align-items-center gap-3 mb-3">
+        <i class="bi bi-check-circle-fill fs-1"></i>
+        <div><div class="fs-4 fw-bold">VACANT</div><div>The checker confirmed this unit is vacant.</div></div>
+      </div>
+    {% elif verification.verified_status == 'occupied' %}
+      <div class="alert alert-danger d-flex align-items-center gap-3 mb-3">
+        <i class="bi bi-x-circle-fill fs-1"></i>
+        <div><div class="fs-4 fw-bold">NOT VACANT</div><div>The checker found this unit is not available.</div></div>
+      </div>
+    {% else %}
+      <div class="alert alert-secondary mb-3"><strong>Could not confirm</strong>: the checker was unable to confirm whether this unit is vacant.</div>
+    {% endif %}
+
+    <dl class="row mb-0">
+      <dt class="col-sm-4">Result</dt><dd class="col-sm-8">{{ verification.result_label }}</dd>
+      <dt class="col-sm-4">Reported on</dt><dd class="col-sm-8">{{ verification.completed_at|nairobi_time }}</dd>
+      <dt class="col-sm-4">Checker's report</dt><dd class="col-sm-8" style="white-space:pre-line">{{ verification.report }}</dd>
+      <dt class="col-sm-4">Checked by</dt>
+      <dd class="col-sm-8">{{ verification.verifier_contact_name or (verification.verifier.full_name if verification.verifier else '') }}</dd>
+      {% set phone = verification.verifier_contact_phone or (verification.verifier.phonenumber if verification.verifier else '') %}
+      {% if phone %}
+        <dt class="col-sm-4">Phone</dt><dd class="col-sm-8"><a href="tel:{{ phone|replace(' ', '') }}">{{ phone }}</a></dd>
+      {% endif %}
+      {% if verification.verifier_contact_email %}
+        <dt class="col-sm-4">Email</dt>
+        <dd class="col-sm-8"><a href="mailto:{{ verification.verifier_contact_email }}">{{ verification.verifier_contact_email }}</a></dd>
+      {% endif %}
+    </dl>
+
+  {% else %}
+    <p>Status: <strong>{{ verification.status|replace('_', ' ')|title }}</strong></p>
+    {% if verification.verifier %}
+      <div class="alert alert-info">
+        Assigned checker: <strong>{{ verification.verifier.full_name }}</strong><br>
+        Contact: <a href="tel:{{ verification.verifier.phonenumber }}">{{ verification.verifier.phonenumber }}</a>
+      </div>
+    {% endif %}
+    <p class="mb-1">
+      <i class="bi bi-clock me-1"></i>Report due by <strong>{{ verification.due_at|nairobi_time }}</strong>.
+    </p>
+    <p class="text-muted small">
+      The checker will confirm whether the unit is vacant and send a report within {{ deadline_hours }} hours.
+      If they have not reported by then, the check is passed to another checker automatically.
+      {% if verification.reassign_count %}
+        (This check has already been passed on {{ verification.reassign_count }} time{{ '' if verification.reassign_count == 1 else 's' }}.)
+      {% endif %}
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

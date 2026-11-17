@@ -94,7 +94,7 @@ In the website, administrators see the same data under **Admin**: Sources, Listi
 python -m pytest
 ```
 
-182 tests run on a temporary in-memory database, so your real data is never touched. They cover accounts, listings, search, the scraper and cleaner, analytics, recommendations, notifications, GPS decoding and M-Pesa (including forged callbacks). See `docs/TESTING.md`. A guide for presenting the project is in `docs/PRESENTATION.md`.
+226 tests run on a temporary in-memory database, so your real data is never touched. They cover accounts, listings, search, the scraper and cleaner, analytics, recommendations, notifications, GPS decoding and M-Pesa (including forged callbacks). See `docs/TESTING.md`. A guide for presenting the project is in `docs/PRESENTATION.md`.
 
 ## Scope
 

@@ -112,6 +112,8 @@ def match_new_listings(listing_ids, only_new=True):
         return 0
 
     alerts = SearchAlert.query.filter(SearchAlert.isactive.is_(True)).all()
+    # loaded once, not once per listing (a scrape can bring in hundreds)
+    profile_renters = _renters_with_criteria()
     created = 0
 
     for listing in listings:
@@ -133,7 +135,7 @@ def match_new_listings(listing_ids, only_new=True):
             created += 1
 
         # profile based alerts, for renters who have not saved a search yet
-        for renter in _renters_with_criteria():
+        for renter in profile_renters:
             if not listing_matches_profile(listing, renter):
                 continue
             if _already_notified(renter.renter_id, listing.listing_id, BUDGET_TYPE):

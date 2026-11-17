@@ -17,20 +17,36 @@ def dashboard():
     distributed and how prices have moved over time.
     """
     city = request.args.get("city", "").strip()
+    area_name = request.args.get("area", "").strip()
+    bedrooms_value = services.to_bedrooms(request.args.get("bedrooms", ""))
 
     query = Property.query.filter(Property.is_active.is_(True))
     if city:
         query = query.filter(Property.city == city)
-    listings = query.all()
+    if area_name:
+        area_row = Area.query.filter(Area.name.ilike(area_name)).first()
+        if area_row is not None:
+            query = query.filter(
+                (Property.area_id == area_row.area_id)
+                | (Property.address.ilike(area_row.name))
+            )
+        else:
+            query = query.filter(Property.address.ilike(area_name))
+    if bedrooms_value is not None:
+        query = query.filter(Property.bedrooms == bedrooms_value)
+    listings = query.order_by(Property.listingdate.asc(), Property.listing_id.asc()).all() \
+        if area_name and bedrooms_value is not None else []
 
-    benchmarks = services.area_benchmarks(city=city or None)
+    benchmarks = services.area_benchmarks(
+        city=city or None, minimum=1, listings=listings
+    ) if listings else []
     distribution = services.rent_distribution(listings)
     stats = services.summarise(listings)
 
     # the price trend and the average rents are given per county and per home
     # type (bedsitter, 1 bedroom ... mansion); the page switches county with a
     # dropdown so counties are never mixed together
-    all_listings = Property.query.filter(Property.is_active.is_(True)).all()
+    all_listings = listings
     trend_by_county = services.price_trend_by_county(all_listings)
     averages_by_county = services.average_rent_by_county(all_listings)
     county_names = list(trend_by_county)
@@ -38,6 +54,7 @@ def dashboard():
     per_sqft = services.rent_per_sqft_stats(listings)
 
     cities = sorted({listing.city for listing in listings if listing.city})
+    area_options = [row.name for row in Area.query.order_by(Area.name).all()]
     areas_covered = len({(listing.address, listing.city) for listing in listings})
 
     # the cheapest and dearest neighbourhoods, each with at least three listings
@@ -58,6 +75,9 @@ def dashboard():
         unit_types=services.UNIT_TYPES,
         cities=cities,
         city=city,
+        area_name=area_name,
+        bedrooms=bedrooms_value if bedrooms_value is not None else "",
+        area_options=area_options,
         cheapest=cheapest,
         dearest=dearest,
         areas_covered=areas_covered,
@@ -73,13 +93,17 @@ def area(area_name):
 
     query = Property.query.filter(Property.is_active.is_(True))
     if area_row is not None:
-        query = query.filter(Property.address == area_row.name)
-        if area_row.city and not city:
-            city = area_row.city
+        # every listing linked to the neighbourhood, or whose address names it.
+        # The city is not used: scraped listings often carry the county or a
+        # nearby town as their city ("Machakos" for Syokimau), which hid them.
+        query = query.filter(
+            (Property.area_id == area_row.area_id) | (Property.address.ilike(area_row.name))
+        )
+        city = area_row.county or area_row.city or city
     else:
         query = query.filter(Property.address.ilike(area_name.strip()))
-    if city:
-        query = query.filter(Property.city == city)
+        if city:
+            query = query.filter(Property.city == city)
 
     listings = query.order_by(Property.rentamount.asc()).all()
     if not listings:
@@ -89,7 +113,7 @@ def area(area_name):
 
     stats = services.summarise(listings)
     distribution = services.rent_distribution(listings)
-    trend = services.price_trend(city=city or None, area=area_row.name if area_row else area_name)
+    trend = services.price_trend(listings=listings)
 
     by_bedrooms = {}
     for listing in listings:

@@ -46,6 +46,63 @@ def _norm(text):
     return " ".join(str(text or "").lower().split())
 
 
+def _county_key(text):
+    """Lower case, hyphens as spaces: "Taita-Taveta" and "taita taveta" match."""
+    return " " + _norm(str(text or "").replace("-", " ").replace(",", " ")) + " "
+
+
+_COUNTY_KEYS = [(_county_key(name), name) for name, _, _ in COUNTIES]
+
+
+def county_in_text(*texts):
+    """The county named in any of the texts ("Westlands, Nairobi County" -> "Nairobi").
+
+    Whole words only, so a county name hidden inside another word never matches.
+    Addresses run from the street to the county, so the county named furthest
+    right wins ("Kiambu Rd, Nairobi" is in Nairobi); on a tie the longer name.
+    Returns None when no county is named.
+    """
+    for text in texts:
+        if not text:
+            continue
+        exact = find_county(text)
+        if exact:
+            return exact[0]
+        key = _county_key(text)
+        hits = [(key.rfind(county_key), len(name), name)
+                for county_key, name in _COUNTY_KEYS if county_key in key]
+        if hits:
+            return max(hits)[2]
+    return None
+
+
+def county_for_place(text):
+    """The county of a place typed into the search box, when it can be known for sure.
+
+    A county name, a neighbourhood the platform knows or a building with
+    listings. Anything else returns None (no guessing from distance, which
+    would put places near a county border in the wrong county).
+    """
+    exact = find_county(text)
+    if exact:
+        return exact[0]
+    q = _norm(text)
+    if not q:
+        return None
+    area = Area.query.filter(func.lower(Area.name) == q).first()
+    if area is not None:
+        return county_in_text(area.county, area.city)
+    row = (
+        Property.query.outerjoin(Area, Property.area_id == Area.area_id)
+        .with_entities(func.min(Area.county), func.min(Property.city))
+        .filter(Property.is_active.is_(True), func.lower(Property.building_name) == q)
+        .first()
+    )
+    if row is not None:
+        return county_in_text(row[0], row[1])
+    return None
+
+
 def _area_item(area, label_county=True):
     county = area.county or area.city
     return {
@@ -53,6 +110,8 @@ def _area_item(area, label_county=True):
         "detail": f"{county} County" if label_county else area.city,
         "type": "area",
         "value": area.name,
+        # only a real county name; a town such as "Thika" is not a county
+        "county": county_in_text(area.county, area.city),
         "area_id": area.area_id,
         "lat": float(area.latitude) if area.latitude is not None else None,
         "lng": float(area.longitude) if area.longitude is not None else None,
@@ -130,12 +189,15 @@ def suggest_areas(query, limit=MAX_RESULTS, county=None):
 def _buildings(q, limit):
     like = f"%{q}%"
     rows = (
-        Property.query.with_entities(
+        Property.query.outerjoin(Area, Property.area_id == Area.area_id)
+        .with_entities(
             Property.building_name,
             func.min(Property.address),
             func.min(Property.latitude),
             func.min(Property.longitude),
             func.count(Property.listing_id),
+            func.min(Area.county),
+            func.min(Property.city),
         )
         .filter(Property.is_active.is_(True), Property.building_name.isnot(None))
         .filter(Property.building_name.ilike(like))
@@ -144,13 +206,14 @@ def _buildings(q, limit):
         .all()
     )
     items = []
-    for name, address, lat, lng, count in rows:
+    for name, address, lat, lng, count, area_county, city in rows:
         items.append(
             {
                 "label": name,
                 "detail": f"Building · {address or 'Kenya'} · {count} unit{'s' if count != 1 else ''}",
                 "type": "building",
                 "value": name,
+                "county": county_in_text(area_county, city),
                 "lat": float(lat) if lat is not None else None,
                 "lng": float(lng) if lng is not None else None,
             }
@@ -205,6 +268,10 @@ def external_places(query, limit=5):
                     "detail": where or "Kenya",
                     "type": "place",
                     "value": name,
+                    "county": county_in_text(
+                        props.get("county"), props.get("state"),
+                        props.get("city"), props.get("locality"),
+                    ),
                     "lat": round(lat, 6),
                     "lng": round(lng, 6),
                 }

@@ -4,9 +4,9 @@ from sqlalchemy import func, or_
 
 from app.analytics import services as analytics
 from app.extensions import db
-from app.counties import find_county
+from app.counties import COUNTIES, find_county
 from app.models import Area, Favorite, Property, ScrapingSource
-from app.places.services import resolve_area
+from app.places.services import county_for_place, resolve_area
 
 main_bp = Blueprint("main", __name__)
 
@@ -60,6 +60,11 @@ def home():
     sort = request.args.get("sort", "").strip()
     page = to_int(request.args.get("page")) or 1
 
+    # the county is filled in from the place, so only the place and bedrooms are asked for
+    if request.args.get("search") == "1" and (not location or bedrooms is None):
+        flash("Choose a place and the number of bedrooms before searching.", "warning")
+        return redirect(url_for("main.home"))
+
     query = Property.query.filter(Property.is_active.is_(True))
 
     notices = []
@@ -71,6 +76,10 @@ def home():
         # "Nairobi County" in the Where box means the whole county, not a text search
         if find_county(location):
             location = ""
+    elif location:
+        # the browser could not fill the county in (typed, not picked):
+        # use the county of a known neighbourhood or building, if it is one
+        county = county_for_place(location) or ""
     if location:
         like = f"%{location}%"
         location_matches = [
@@ -116,8 +125,9 @@ def home():
         query = query.filter(Property.category == category)
     if max_price:
         query = query.filter(Property.rentamount <= max_price)
-    if bedrooms:
-        query = query.filter(Property.bedrooms >= bedrooms)
+    area_filter_count = query.order_by(None).count() if area else None
+    if bedrooms is not None:
+        query = query.filter(Property.bedrooms == bedrooms)
     if source:
         source_id = _source_id(source)
         conditions = [Property.source_name == source]
@@ -181,6 +191,20 @@ def home():
 
     pagination = query.paginate(page=page, per_page=12, error_out=False)
     listings = pagination.items
+    if not listings and bedrooms is not None and area:
+        bedroom_label = "bedsitter/studio" if bedrooms == 0 else (
+            f"{bedrooms}-bedroom"
+        )
+        if area_filter_count:
+            notices.append(
+                f"No {bedroom_label} homes are currently listed in {area}. "
+                "Try another bedroom selection or neighbourhood."
+            )
+        else:
+            notices.append(
+                f"No homes are currently listed in {area}. "
+                "Try another neighbourhood."
+            )
 
     # the market figures for the whole search, used for the summary line
     benchmarks = analytics.area_benchmarks()
@@ -230,6 +254,7 @@ def home():
     return render_template(
         "home.html",
         stats=stats,
+        counties=COUNTIES,
         popular=popular,
         county=county,
         location_label=(county + " County") if county and not location else location,
@@ -249,7 +274,7 @@ def home():
         category=category,
         categories=CATEGORIES,
         max_price=max_price or "",
-        bedrooms=bedrooms or "",
+        bedrooms=bedrooms if bedrooms is not None else "",
         source=source,
         availability=availability,
         sources=sources,

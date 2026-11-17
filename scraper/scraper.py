@@ -80,6 +80,21 @@ def _city_reference(city):
     return Area.query.filter(Area.city.ilike(city), Area.latitude.isnot(None)).first()
 
 
+def _merged_availability(current, scraped):
+    """The availability to keep when a listing is scraped again.
+
+    A unit reserved through an M-Pesa payment stays reserved, and a status the
+    platform knows (from a vacancy check or an earlier advert) is not wiped out
+    by an advert that simply does not say.
+    """
+    scraped = scraped or "unknown"
+    if current == "reserved":
+        return current
+    if scraped == "unknown" and current in ("vacant", "occupied"):
+        return current
+    return scraped
+
+
 def _apply(cleaned, listing, area):
     """Copy the cleaned values onto a Property row."""
     listing.title = cleaned["title"]
@@ -90,7 +105,9 @@ def _apply(cleaned, listing, area):
     listing.building_name = cleaned["building_name"]
     listing.floor_number = cleaned["floor_number"]
     listing.room_number = cleaned["room_number"]
-    listing.availability_status = cleaned["availability_status"]
+    listing.availability_status = _merged_availability(
+        listing.availability_status, cleaned["availability_status"]
+    )
     listing.city = cleaned["city"]
     listing.address = cleaned["address"]
     if not listing.city and area is not None:

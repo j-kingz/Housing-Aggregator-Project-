@@ -14,23 +14,34 @@
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
   <div>
-    <h2 class="mb-1">Market overview</h2>
-    <span class="text-muted small">Calculated live from {{ stats.count }} active listings</span>
+    <h2 class="mb-1">Selected-room price analytics</h2>
+    <span class="text-muted small">Choose a place and bedroom count to see prices for that selection only.</span>
   </div>
   <form method="get" class="d-flex gap-2">
-    <select name="city" class="form-select form-select-sm" onchange="this.form.submit()">
-      <option value="">All counties</option>
-      {% for c in cities %}
-        <option value="{{ c }}" {% if city == c %}selected{% endif %}>{{ c }}</option>
+    <select name="area" class="form-select form-select-sm" required>
+      <option value="">Choose place</option>
+      {% for name in area_options %}
+        <option value="{{ name }}" {% if area_name == name %}selected{% endif %}>{{ name }}</option>
       {% endfor %}
     </select>
-    <noscript><button class="btn btn-sm btn-primary">Filter</button></noscript>
+    <select name="bedrooms" class="form-select form-select-sm" required>
+      <option value="">Choose bedrooms</option>
+      {% for n in range(0, 6) %}
+        <option value="{{ n }}" {% if bedrooms == n %}selected{% endif %}>
+          {{ 'Bedsitter / studio' if n == 0 else n ~ (' bedroom' if n == 1 else ' bedrooms') }}
+        </option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary btn-sm">Show prices</button>
   </form>
 </div>
 
-{% if not stats.count %}
+{% if not area_name or bedrooms == "" %}
   {{ empty_state('bi-bar-chart', 'There is no market data yet.',
-      'Load the sample listings with "python -m scraper.cli import-fixture" or point the scraper at a live site.') }}
+      'Select a place and the number of bedrooms above. Analytics are intentionally limited to that selection.') }}
+{% elif not stats.count %}
+  {{ empty_state('bi-bar-chart', 'No listings match that place and bedroom count.',
+      'Try another neighbourhood or bedroom selection.') }}
 {% else %}
 
 <div class="row g-3 mb-4">
@@ -270,28 +281,28 @@
   const trendSelect = document.getElementById('trendCounty');
   const trendNote = document.getElementById('trendNote');
 
-  // y axis ticks at 5k, 15k, 25k ... ; when the prices run higher the step
-  // grows in whole multiples of 10k so the axis stays readable
+  // the y axis always starts at KSh 0, so a small change in rent is not drawn
+  // as a dramatic jump; ticks at 0, then 5k, 15k, 25k ... and when the prices
+  // run higher the step grows in whole multiples of 10k so the axis stays readable
   const yAxis = {
+    beginAtZero: true,
     grid: {color: grid},
-    ticks: {color: ink, callback: (v) => short(v)},
+    ticks: {color: ink, callback: (v) => (v === 0 ? '0' : short(v))},
     title: {display: true, text: 'Average rent (KSh)', color: ink},
     afterDataLimits: (axis) => {
-      const lo = Math.max(0, axis.min), hi = Math.max(axis.max, 15000);
+      const hi = Math.max(axis.max, 15000);
       let step = 10000;
       for (const m of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]) {
         step = 10000 * m;
         if ((hi - 5000) / step <= 10) break;
       }
       axis._step = step;
-      axis.min = lo < 5000 ? 0 : 5000 + Math.floor((lo - 5000) / step) * step;
+      axis.min = 0;
       axis.max = 5000 + Math.ceil((hi - 5000) / step) * step;
     },
     afterBuildTicks: (axis) => {
-      const ticks = [];
-      for (let v = 5000; v <= axis.max; v += axis._step) {
-        if (v >= axis.min) ticks.push({value: v});
-      }
+      const ticks = [{value: 0}];
+      for (let v = 5000; v <= axis.max; v += axis._step) ticks.push({value: v});
       axis.ticks = ticks;
     }
   };
@@ -327,10 +338,8 @@
       borderColor: colourOf(s.type),
       backgroundColor: colourOf(s.type),
       borderWidth: 2,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      pointBorderColor: '#ffffff',
-      pointBorderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 5,
       spanGaps: true,
       tension: 0.25,
     }));
@@ -338,7 +347,7 @@
     const periods = t.labels.length;
     trendNote.textContent = periods > 1
       ? `${county} County, by ${t.granularity} listed`
-      : `${county} County: only one ${t.granularity} of data so far, so each home type shows a single point. More points appear as the scraper runs.`;
+      : `${county} County: one ${t.granularity} of data so far. The line will extend as more listings are collected.`;
   }
 
   // ---- average rent by county, per home type ----

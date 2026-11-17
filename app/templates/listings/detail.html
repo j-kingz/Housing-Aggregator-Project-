@@ -44,6 +44,11 @@
               {% else %}
                 <span class="badge text-bg-light border fs-6">Not confirmed</span>
               {% endif %}
+              {% if checked and checked.completed_at %}
+                <div class="small text-success mt-1">
+                  <i class="bi bi-shield-check me-1"></i>Confirmed by an approved checker on {{ checked.completed_at.strftime('%d %b %Y') }}
+                </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -53,13 +58,14 @@
           <i class="bi bi-telephone-forward fs-4"></i>
           <div>
             <strong>We could not confirm this unit is free.</strong>
-            <div class="small mb-2">The advert does not say. Open the original listing to see the agent's phone number and details, and ask whether it is still vacant before you pay anything.</div>
-            {% if listing.source_url and listing.source_url.startswith(('http://', 'https://')) %}
-              <a class="btn btn-sm btn-warning" href="{{ listing.source_url }}" target="_blank" rel="noopener noreferrer">
-                <i class="bi bi-box-arrow-up-right me-1"></i> Open the original listing{% if listing.source_name %} on {{ listing.source_name }}{% endif %}
-              </a>
+            <div class="small mb-2">The advert does not say. Use premium vacancy verification to have an approved checker confirm it for you.</div>
+            {% if current_user.is_authenticated and current_user.is_renter %}
+              <form method="post" action="{{ url_for('premium.request_verification', listing_id=listing.listing_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-warning"><i class="bi bi-shield-check me-1"></i> Request vacancy verification</button>
+              </form>
             {% else %}
-              <span class="small">Ask the landlord to confirm.</span>
+              <a class="btn btn-sm btn-warning" href="{{ url_for('auth.login') }}">Log in to request verification</a>
             {% endif %}
           </div>
         </div>
@@ -69,9 +75,14 @@
           {{ verdict_badge(verdict) }}
           {% if verdict and verdict.benchmark_average %}
             <span class="text-muted small">
-              The area average is KSh {{ "{:,.0f}".format(verdict.benchmark_average) }}
-              across {{ verdict.benchmark_count }} listing{{ '' if verdict.benchmark_count == 1 else 's' }}
-              {% if verdict.scope == 'area' %}in {{ listing.address }}{% else %}in {{ listing.city }}{% endif %}.
+              Similar homes ({{ verdict.unit_type }}) typically rent for
+              KSh {{ "{:,.0f}".format(verdict.benchmark_median or verdict.benchmark_average) }}
+              (the middle of {{ verdict.benchmark_count }} listing{{ '' if verdict.benchmark_count == 1 else 's' }})
+              {% if verdict.scope == 'area' %}in {{ listing.address }}{% elif verdict.scope == 'county' %}in {{ verdict.benchmark_area }} County{% else %}in {{ listing.city }}{% endif %}.
+            </span>
+          {% elif verdict and verdict.unit_type %}
+            <span class="text-muted small">
+              Fewer than 3 similar homes ({{ verdict.unit_type }}) are listed nearby, so the rent can't be compared yet.
             </span>
           {% endif %}
         </div>
@@ -223,12 +234,12 @@
         </a>
       {% elif can_reserve and not current_user.is_authenticated %}
         <a href="{{ url_for('auth.login') }}" class="btn btn-outline-success w-100 mb-2">Log in to reserve with M-Pesa</a>
-      {% endif %}
-
-      {% if listing.source_url and listing.source_url.startswith(('http://', 'https://')) %}
-        <a href="{{ listing.source_url }}" class="btn btn-outline-primary w-100 mb-2" target="_blank" rel="noopener noreferrer">
-          <i class="bi bi-box-arrow-up-right me-1"></i> See the original listing
-        </a>
+      {% elif listing.is_active and listing.availability_status not in ('occupied', 'reserved') %}
+        {# not confirmed vacant yet: no deposit is taken for a unit that may already be let #}
+        <button type="button" class="btn btn-outline-secondary w-100 mb-1" disabled>
+          <i class="bi bi-lock me-1"></i> Reserve with M-Pesa
+        </button>
+        <p class="small text-muted mb-2">Reservation opens once this unit is confirmed vacant.</p>
       {% endif %}
 
       {% if listing.area %}

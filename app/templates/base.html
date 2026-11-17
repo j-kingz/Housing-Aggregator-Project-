@@ -48,10 +48,18 @@
           {% endif %}
           {% if current_user.is_authenticated and current_user.is_renter %}
             <li class="nav-item">
+              <a class="nav-link {{ 'active' if page and page.startswith('premium.') }}" href="{{ url_for('premium.dashboard') }}"><i class="bi bi-shield-check me-1"></i>Premium checks</a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link {{ 'active' if page == 'insights.budget' }}" href="{{ url_for('insights.budget') }}"><i class="bi bi-wallet2 me-1"></i>What can I afford?</a>
             </li>
             <li class="nav-item">
               <a class="nav-link {{ 'active' if page == 'notifications.alerts' }}" href="{{ url_for('notifications.alerts') }}"><i class="bi bi-bell me-1"></i>Saved searches</a>
+            </li>
+          {% endif %}
+          {% if current_user.is_authenticated and current_user.verifier_approved %}
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if page == 'premium.verifier_queue' }}" href="{{ url_for('premium.verifier_queue') }}"><i class="bi bi-clipboard-check me-1"></i>Verification requests</a>
             </li>
           {% endif %}
           {% if current_user.is_authenticated and current_user.is_landlord %}
@@ -149,7 +157,7 @@
         </div>
         <div class="col-6 col-md-4">
           <div class="fw-semibold mb-2">About the data</div>
-          <p class="small mb-0">Some listings come from public pages of other websites and always link back to the original advert.
+          <p class="small mb-0">Some listings come from public pages of other websites. We keep your search and verification experience inside this website.
             Photos belong to their owners. Prices are as advertised.</p>
         </div>
       </div>

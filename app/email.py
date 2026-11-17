@@ -145,3 +145,69 @@ def send_test_email(to_address, config=None):
         "Your SMTP settings work. Reservation confirmation emails will be delivered."
     )
     deliver(message, config)
+
+
+def send_password_reset(user, reset_url):
+    """Send a single-use password reset link to the user's registered email."""
+    config = current_app.config
+    if not email_configured(config):
+        raise EmailDeliveryError("Password reset email is not configured.")
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your Housing Aggregator password"
+    message["From"] = config["MAIL_SENDER"]
+    message["To"] = user.email
+    message.set_content(
+        f"Hello {user.full_name},\n\n"
+        "Use the link below to choose a new Housing Aggregator password. "
+        "The link expires in 30 minutes and can only be used once:\n\n"
+        f"{reset_url}\n\n"
+        "If you did not request this, you can ignore this email.\n\n"
+        "Housing Aggregator"
+    )
+    message.add_alternative(
+        f"""<div style="font-family:Arial,sans-serif;max-width:560px;color:#0b0b0b">
+  <h2 style="color:#0f766e">Reset your password</h2>
+  <p>Hello {escape(user.full_name)},</p>
+  <p>Use the button below to choose a new Housing Aggregator password.
+  The link expires in 30 minutes and can only be used once.</p>
+  <p><a href="{escape(reset_url)}" style="background:#0f766e;color:white;padding:10px 16px;text-decoration:none;border-radius:4px">Reset password</a></p>
+  <p style="font-size:13px;color:#52514e">If you did not request this, you can ignore this email.</p>
+  <p>Housing Aggregator</p>
+</div>""",
+        subtype="html",
+    )
+    deliver(message, config)
+
+
+def send_premium_subscription_confirmation(user, payment, expires_at):
+    """Send confirmation that premium vacancy-verification access is active."""
+    config = current_app.config
+    if not email_configured(config):
+        raise EmailDeliveryError("Premium subscription email is not configured.")
+
+    amount = f"KShs {float(payment.amount):,.0f}"
+    expiry = expires_at.strftime("%d %b %Y")
+    message = EmailMessage()
+    message["Subject"] = "Your premium subscription is active"
+    message["From"] = config["MAIL_SENDER"]
+    message["To"] = user.email
+    message.set_content(
+        f"Hello {user.full_name},\n\n"
+        f"Payment of {amount} received, you now have access to premium subscription.\n"
+        f"Your access is active until {expiry}.\n\n"
+        "You can now request verified vacancy checks from the Premium checks section.\n\n"
+        "Housing Aggregator"
+    )
+    message.add_alternative(
+        f"""<div style="font-family:Arial,sans-serif;max-width:560px;color:#0b0b0b">
+  <h2 style="color:#0f766e">Premium subscription active</h2>
+  <p>Hello {escape(user.full_name)},</p>
+  <p><strong>Payment of {escape(amount)} received, you now have access to premium subscription.</strong></p>
+  <p>Your access is active until <strong>{escape(expiry)}</strong>.</p>
+  <p>You can now request verified vacancy checks from the Premium checks section.</p>
+  <p>Housing Aggregator</p>
+</div>""",
+        subtype="html",
+    )
+    deliver(message, config)

@@ -164,12 +164,22 @@ class TestTrend:
         trend = services.price_trend_by_type(Property.query.all())
         assert trend["granularity"] == "week"
 
-    def test_the_dashboard_offers_a_county_dropdown(self, client, app):
+    def test_the_dashboard_requires_a_place_and_bedroom_selection(self, client, app):
         add_listing("A", 40000, beds=2)
         add_listing("B", 20000, beds=1, address="Mombasa CBD", city="Mombasa")
         html = client.get("/analytics/").get_data(as_text=True)
-        assert 'id="trendCounty"' in html and 'id="averageCounty"' in html
-        assert "Average rent by county" in html
+        assert 'name="area"' in html and 'name="bedrooms"' in html
+        assert "Selected-room price analytics" in html
+
+    def test_dashboard_only_uses_the_selected_place_and_bedrooms(self, client, app):
+        add_listing("Westlands two", 40000, address="Westlands", beds=2)
+        add_listing("Westlands one", 20000, address="Westlands", beds=1)
+        add_listing("Kilimani two", 30000, address="Kilimani", beds=2)
+
+        html = client.get("/analytics/?area=Westlands&bedrooms=2").get_data(as_text=True)
+        assert "KSh 40,000" in html
+        assert "KSh 20,000" not in html
+        assert "KSh 30,000" not in html
 
 
 class TestVerdict:
@@ -216,3 +226,140 @@ class TestSnapshots:
 
         assert snapshot.listing_count == 2
         assert float(snapshot.average_rent) == 50000
+
+
+# -- places whose listings carry a different city than their neighbourhood ----
+from app.extensions import db  # noqa: E402
+from app.models import Area  # noqa: E402
+
+
+def _area(name, city, county):
+    area = Area(name=name, city=city, county=county, latitude=-1.3, longitude=36.9)
+    db.session.add(area)
+    db.session.commit()
+    return area
+
+
+class TestAreaPageFindsEveryListing:
+    def test_listings_whose_city_differs_from_the_neighbourhood_are_shown(self, client, app):
+        # the neighbourhood says Nairobi, the scraped listings say Machakos
+        syokimau = _area("Syokimau", "Nairobi", "Machakos")
+        for rent in (30000, 40000, 50000):
+            add_listing(f"Flat {rent}", rent, address="Syokimau", city="Machakos",
+                        area_id=syokimau.area_id)
+        response = client.get("/analytics/area/Syokimau?city=Nairobi")
+        assert response.status_code == 200
+        assert "Flat 30000" in response.get_data(as_text=True)
+
+    def test_a_listing_linked_to_the_area_with_another_address_is_shown(self, client, app):
+        machakos = _area("Machakos", "Machakos", "Machakos")
+        add_listing("Town flat", 20000, address="Machakos Town", city="Machakos",
+                    area_id=machakos.area_id)
+        response = client.get("/analytics/area/Machakos")
+        assert response.status_code == 200
+        assert "Town flat" in response.get_data(as_text=True)
+
+    def test_an_unknown_place_with_no_listings_is_still_not_found(self, client, app):
+        assert client.get("/analytics/area/Nowhere").status_code == 404
+
+    def test_the_trend_covers_the_listings_shown(self, app):
+        syokimau = _area("Syokimau", "Nairobi", "Machakos")
+        listings = [add_listing("A", 30000, address="Syokimau", city="Machakos",
+                                area_id=syokimau.area_id, days_ago=40),
+                    add_listing("B", 50000, address="Syokimau", city="Machakos",
+                                area_id=syokimau.area_id)]
+        trend = services.price_trend(listings=listings)
+        assert sum(row["count"] for row in trend) == 2
+
+
+class TestVerdictFallsBackToTheCounty:
+    def test_a_small_neighbourhood_is_compared_with_its_county(self, app):
+        ruaka = _area("Ruaka", "Nairobi", "Kiambu")
+        juja = _area("Juja", "Juja", "Kiambu")
+        ruiru = _area("Ruiru", "Ruiru", "Kiambu")
+        add_listing("Juja flat", 30000, address="Juja", city="Kiambu", area_id=juja.area_id)
+        add_listing("Ruiru flat", 30000, address="Ruiru", city="Kamakis", area_id=ruiru.area_id)
+        add_listing("Ruaka flat", 30000, address="Ruaka", city="Kiambu", area_id=ruaka.area_id)
+        listing = add_listing("Dear Ruaka flat", 60000, address="Ruaka", city="Kiambu",
+                              area_id=ruaka.area_id)
+
+        verdict = services.listing_verdict(listing, services.area_benchmarks())
+
+        assert verdict["scope"] == "county"
+        assert verdict["benchmark_area"] == "Kiambu"
+        assert verdict["benchmark_count"] == 4
+        assert verdict["verdict"] == "expensive"
+
+    def test_the_only_listing_in_a_county_is_still_unknown(self, app):
+        nanyuki = _area("Nanyuki", "Nanyuki", "Laikipia")
+        listing = add_listing("Nanyuki house", 40000, address="Nanyuki", city="Laikipia",
+                              area_id=nanyuki.area_id)
+        verdict = services.listing_verdict(listing, services.area_benchmarks())
+        assert verdict["verdict"] == "unknown"
+
+    def test_the_listing_page_names_the_county(self, client, app):
+        ruaka = _area("Ruaka", "Nairobi", "Kiambu")
+        juja = _area("Juja", "Juja", "Kiambu")
+        add_listing("Juja flat", 30000, address="Juja", city="Kiambu", area_id=juja.area_id)
+        add_listing("Juja flat 2", 30000, address="Juja", city="Kiambu", area_id=juja.area_id)
+        listing = add_listing("Ruaka flat", 30000, address="Ruaka", city="Kiambu",
+                              area_id=ruaka.area_id)
+        page = client.get(f"/listings/{listing.listing_id}").get_data(as_text=True)
+        assert "in Kiambu County" in page
+
+
+class TestTrendChartsStartAtZero:
+    def test_the_dashboard_trend_axis_starts_at_zero(self, client, app):
+        westlands = _area("Westlands", "Nairobi", "Nairobi")
+        add_listing("A", 30000, area_id=westlands.area_id, days_ago=40)
+        add_listing("B", 50000, area_id=westlands.area_id)
+        html = client.get("/analytics/?area=Westlands&bedrooms=2").get_data(as_text=True)
+        assert "trendChart" in html
+        assert "axis.min = 0;" in html
+        assert "beginAtZero: true" in html
+
+    def test_the_area_trend_axis_starts_at_zero(self, client, app):
+        westlands = _area("Westlands", "Nairobi", "Nairobi")
+        add_listing("A", 30000, area_id=westlands.area_id, days_ago=40)
+        add_listing("B", 50000, area_id=westlands.area_id)
+        html = client.get("/analytics/area/Westlands").get_data(as_text=True)
+        assert "beginAtZero: true, min: 0" in html
+
+
+class TestVerdictComparesLikeWithLike:
+    def test_a_bedsitter_is_not_compared_with_big_houses(self, app):
+        # three dear family homes and three bedsitters in the same area
+        for rent in (200000, 220000, 250000):
+            add_listing("House", rent, beds=5, category="Maisonette")
+        for rent in (15000, 15000, 16000):
+            add_listing("Bedsitter", rent, beds=0, category="Bedsitter")
+        listing = add_listing("My bedsitter", 15500, beds=0, category="Bedsitter")
+
+        verdict = services.listing_verdict(listing, services.area_benchmarks())
+
+        assert verdict["verdict"] == "fair"            # was "cheap" against the mixed average
+        assert verdict["unit_type"] == "Bedsitter / Studio"
+        assert verdict["benchmark_count"] == 4         # only the bedsitters
+
+    def test_too_few_similar_homes_is_unknown(self, app):
+        for rent in (50000, 52000, 54000):
+            add_listing("2 bed", rent, beds=2)
+        listing = add_listing("Bedsitter", 15000, beds=0, category="Bedsitter")
+        verdict = services.listing_verdict(listing, services.area_benchmarks())
+        assert verdict["verdict"] == "unknown"
+
+    def test_one_very_dear_home_does_not_make_the_rest_look_cheap(self, app):
+        for rent in (40000, 41000, 42000):
+            add_listing("Normal", rent)
+        add_listing("Penthouse", 400000)              # pulls the average far up
+        listing = add_listing("Mine", 41000)
+        verdict = services.listing_verdict(listing, services.area_benchmarks())
+        assert verdict["verdict"] == "fair"            # the median is 42,000
+
+    def test_the_listing_page_explains_the_comparison(self, client, app):
+        for rent in (40000, 41000, 42000):
+            add_listing("Normal", rent)
+        listing = add_listing("Mine", 20000)
+        page = client.get(f"/listings/{listing.listing_id}").get_data(as_text=True)
+        assert "Similar homes (2 Bedrooms) typically rent for" in page
+        assert "% below market" in page and "-" not in page.split("% below market")[0][-4:]

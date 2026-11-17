@@ -4,7 +4,7 @@ import re
 
 from app.extensions import db
 from app.models import Property, RenterDetails, Role, User
-from tests.conftest import login
+from tests.conftest import login, make_user
 
 def add_listing(**extra):
     fields = {
@@ -29,11 +29,150 @@ class TestPublicPages:
         response = client.get("/")
         assert response.status_code == 200
         assert b"navbar-expand-lg" in response.data
+        html = response.get_data(as_text=True)
+        # Place and Bedrooms; the county fills itself in from the place
+        assert html.count('class="required-star"') == 2
+        assert "Please add an input or selection in this field" in html
+
+    def test_registration_explains_and_enforces_password_mixture(self, client):
+        html = client.get("/register").get_data(as_text=True)
+        assert "at least 8 characters" in html
+        assert "uppercase" in html
+        assert "special character" in html
+        assert 'id="passwordRequirements"' in html
+        assert 'data-rule="length"' in html
+        assert 'data-rule="special"' in html
+        assert 'id="passwordMatchMessage"' in html
+        assert "Passwords do not match." in html
+
+        response = client.post(
+            "/register",
+            data={
+                "firstname": "Weak",
+                "lastname": "Password",
+                "email": "weak@example.com",
+                "account_type": "Renter",
+                "password": "12345678",
+                "confirm_password": "12345678",
+            },
+        )
+        assert response.status_code == 400
+        assert b"uppercase letter" in response.data
+
+    def test_registration_accepts_a_mixed_password(self, client):
+        response = client.post(
+            "/register",
+            data={
+                "firstname": "Strong",
+                "lastname": "Password",
+                "email": "strong@example.com",
+                "account_type": "Renter",
+                "password": "Rent@2026",
+                "confirm_password": "Rent@2026",
+            },
+        )
+        assert response.status_code == 302
+
+    def test_forgot_password_sends_a_reset_link_without_revealing_accounts(
+        self, client, app, monkeypatch
+    ):
+        user = make_user("reset@example.com", "Renter")
+        sent = []
+        monkeypatch.setattr(
+            "app.auth.routes.send_password_reset",
+            lambda account, reset_url: sent.append((account.email, reset_url)),
+        )
+
+        response = client.post(
+            "/forgot-password", data={"email": user.email}, follow_redirects=True
+        )
+        assert response.status_code == 200
+        assert "If an active account uses that email" in response.get_data(as_text=True)
+        assert sent and sent[0][0] == user.email
+        assert "/reset-password/" in sent[0][1]
+
+        response = client.post(
+            "/forgot-password",
+            data={"email": "missing@example.com"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "If an active account uses that email" in response.get_data(as_text=True)
+
+    def test_reset_password_token_is_single_use_and_requires_strong_password(
+        self, client, app, monkeypatch
+    ):
+        user = make_user("reset-token@example.com", "Renter")
+        sent = []
+        monkeypatch.setattr(
+            "app.auth.routes.send_password_reset",
+            lambda account, reset_url: sent.append(reset_url),
+        )
+        client.post("/forgot-password", data={"email": user.email})
+        reset_url = sent[0]
+
+        response = client.get(reset_url.replace("http://localhost", ""))
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'id="passwordRequirements"' in html
+        assert 'data-rule="special"' in html
+        assert 'id="passwordMatchMessage"' in html
+        assert "Passwords do not match." in html
+
+        response = client.post(
+            reset_url.replace("http://localhost", ""),
+            data={"password": "12345678", "confirm_password": "12345678"},
+        )
+        assert response.status_code == 200
+        assert b"at least 8 characters" in response.data
+
+        response = client.post(
+            reset_url.replace("http://localhost", ""),
+            data={"password": "Reset@2026", "confirm_password": "Reset@2026"},
+        )
+        assert response.status_code == 302
+        assert user.password_reset_token_hash is None
+
+        response = client.get(reset_url.replace("http://localhost", ""))
+        assert response.status_code == 302
+        assert "/forgot-password" in response.headers["Location"]
 
     def test_the_search_page_with_filters(self, client):
         add_listing()
         response = client.get("/?location=Westlands&max_price=60000&bedrooms=2&sort=price_low")
         assert response.status_code == 200
+
+    def test_homepage_search_requires_place_and_bedrooms(self, client):
+        response = client.get("/?search=1&county=Kiambu&bedrooms=2")
+        assert response.status_code == 302
+        response = client.get("/?search=1&location=Westlands&county=Kiambu")
+        assert response.status_code == 302
+
+    def test_homepage_search_does_not_need_a_county(self, client):
+        # the county is filled in from the place, so a search without one works
+        response = client.get("/?search=1&location=Westlands&bedrooms=2")
+        assert response.status_code == 200
+
+    def test_homepage_county_box_fills_itself_from_the_place(self, client):
+        html = client.get("/").get_data(as_text=True)
+        assert "Where in Kenya" not in html
+        assert ">Place <" in html
+        assert ">County</label>" in html
+        # a read-only box the user never types in, backed by a hidden field
+        assert 'id="county_display"' in html and "readonly" in html
+        assert 'type="hidden" id="county" name="county"' in html
+        assert 'data-county-field="#county" data-county-any' in html
+        assert '<select id="county"' not in html
+        # the county names the browser uses to read a county from an address
+        assert '"Mombasa"' in html and '"Nairobi"' in html
+        assert "Murang" in html
+        assert 'value="0"' in html
+        assert "Bedsitter / studio" in html
+
+    def test_a_typed_neighbourhood_fills_the_county_box(self, client, areas):
+        html = client.get("/?search=1&location=Westlands&bedrooms=2").get_data(as_text=True)
+        assert 'value="Nairobi County"' in html
+        assert 'name="county" value="Nairobi"' in html
 
     def test_search_can_filter_by_building_unit_and_vacancy(self, client):
         add_listing(

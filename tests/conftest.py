@@ -22,6 +22,8 @@ ROLES = ["Renter", "Landlord", "Administrator"]
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"
+    # the in-memory database lives in one connection; never recycle it
+    SQLALCHEMY_ENGINE_OPTIONS = {}
     WTF_CSRF_ENABLED = False
     SECRET_KEY = "test-secret-key-for-the-test-suite"
     # never talk to Safaricom or a mail server from the tests, whatever .env says

@@ -49,6 +49,12 @@
             {% else %}
               <span class="badge text-bg-warning ms-1">pending</span>
             {% endif %}
+            <form method="post" action="{{ url_for('admin.toggle_verifier', user_id=u.user_id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-info">
+                {{ 'Remove verifier' if u.verifier_approved else 'Approve verifier' }}
+              </button>
+            </form>
           {% endif %}
         </td>
         <td>

@@ -40,6 +40,12 @@ class Config:
     MPESA_CALLBACK_BASE_URL = os.getenv("MPESA_CALLBACK_BASE_URL", "").rstrip("/")
     # share of the monthly rent taken as the reservation deposit
     MPESA_RESERVATION_PERCENT = float(os.getenv("MPESA_RESERVATION_PERCENT", 10))
+    PREMIUM_SUBSCRIPTION_AMOUNT = int(os.getenv("PREMIUM_SUBSCRIPTION_AMOUNT", 500))
+    PREMIUM_SUBSCRIPTION_DAYS = int(os.getenv("PREMIUM_SUBSCRIPTION_DAYS", 30))
+    # hours a verifier has to report on a vacancy check before it is reassigned
+    VERIFICATION_DEADLINE_HOURS = int(os.getenv("VERIFICATION_DEADLINE_HOURS", 24))
+    # how many times an overdue check is handed to another verifier before it expires
+    VERIFICATION_MAX_REASSIGNMENTS = int(os.getenv("VERIFICATION_MAX_REASSIGNMENTS", 2))
 
     # quote_plus so a password with @ or / in it doesn't break the url
     SQLALCHEMY_DATABASE_URI = (
@@ -47,6 +53,11 @@ class Config:
         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # MySQL closes idle connections (wait_timeout); test each pooled connection
+    # before use and recycle it early, instead of failing with "server has gone away"
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True, "pool_recycle": 280}
 
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
+    # set SESSION_COOKIE_SECURE=true once the site is served over https
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"

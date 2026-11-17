@@ -7,7 +7,8 @@ from flask_login import current_user, login_required
 from app.analytics import services as analytics
 from app.extensions import db
 from app.insights import services as insights
-from app.models import Area, Favorite, Property
+from app.models import Area, Favorite, Property, VerificationRequest
+from app.payments.routes import can_reserve
 from app.places.services import resolve_area
 
 listings_bp = Blueprint("listings", __name__, url_prefix="/listings")
@@ -197,6 +198,15 @@ def detail(listing_id):
 
     units = building_units(listing)
 
+    # the latest vacancy check, shown only while the unit still has the status
+    # the checker found (a later reservation or advert makes it out of date)
+    checked = (
+        VerificationRequest.query.filter_by(listing_id=listing.listing_id, status="completed")
+        .filter(VerificationRequest.verified_status == listing.availability_status)
+        .order_by(VerificationRequest.completed_at.desc())
+        .first()
+    )
+
     # the renter's workplace, so the map can show how far this home is
     work_point = None
     saved = False
@@ -216,7 +226,8 @@ def detail(listing_id):
         units=units,
         work_point=work_point,
         saved=saved,
-        can_reserve=bool(listing.is_active) and listing.availability_status in ("vacant", "unknown"),
+        checked=checked,
+        can_reserve=can_reserve(listing),
     )
 
 

@@ -58,13 +58,25 @@
 
       <div class="mb-3">
         <label class="form-label" for="password">Password</label>
-        <input type="password" id="password" name="password" class="form-control" minlength="8" required>
-        <div class="form-text">At least 8 characters.</div>
+        <input type="password" id="password" name="password" class="form-control" minlength="8"
+               pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}"
+               title="Use at least 8 characters, including uppercase, lowercase, a number and a special character."
+               required>
+        <div id="passwordRequirements" class="form-text password-requirements" aria-live="polite">
+          <div class="mb-1">Your password must have:</div>
+          <ul class="list-unstyled mb-0">
+            <li data-rule="length"><i class="bi bi-circle me-1" aria-hidden="true"></i>At least 8 characters</li>
+            <li data-rule="lower"><i class="bi bi-circle me-1" aria-hidden="true"></i>An uppercase letter and a lowercase letter</li>
+            <li data-rule="number"><i class="bi bi-circle me-1" aria-hidden="true"></i>A number</li>
+            <li data-rule="special"><i class="bi bi-circle me-1" aria-hidden="true"></i>A special character (for example <code>@</code>)</li>
+          </ul>
+        </div>
       </div>
 
       <div class="mb-4">
         <label class="form-label" for="confirm_password">Confirm password</label>
         <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+        <div id="passwordMatchMessage" class="form-text" aria-live="polite"></div>
       </div>
 
       <button type="submit" class="btn btn-primary w-100 py-2">Create account</button>
@@ -81,5 +93,55 @@
       document.getElementById('businessField').classList.toggle('d-none', this.value !== 'Landlord');
     });
   });
+
+  const password = document.getElementById('password');
+  const passwordRequirements = document.getElementById('passwordRequirements');
+  const requirementRules = {
+    length: value => value.length >= 8,
+    lower: value => /[a-z]/.test(value) && /[A-Z]/.test(value),
+    number: value => /\d/.test(value),
+    special: value => /[^A-Za-z0-9]/.test(value),
+  };
+
+  function updatePasswordRequirements() {
+    const value = password.value;
+    let allValid = true;
+    Object.entries(requirementRules).forEach(([name, rule]) => {
+      const item = passwordRequirements.querySelector(`[data-rule="${name}"]`);
+      const icon = item.querySelector('i');
+      const valid = rule(value);
+      allValid = allValid && valid;
+      item.classList.toggle('password-requirement-valid', valid);
+      icon.className = valid
+        ? 'bi bi-check-circle-fill me-1'
+        : 'bi bi-circle me-1';
+    });
+    passwordRequirements.hidden = allValid;
+  }
+
+  password.addEventListener('input', updatePasswordRequirements);
+  updatePasswordRequirements();
+
+  const confirmPassword = document.getElementById('confirm_password');
+  const passwordMatchMessage = document.getElementById('passwordMatchMessage');
+
+  function updatePasswordMatch() {
+    if (!confirmPassword.value) {
+      confirmPassword.setCustomValidity('');
+      passwordMatchMessage.textContent = '';
+      passwordMatchMessage.className = 'form-text';
+      return;
+    }
+
+    const matches = confirmPassword.value === password.value;
+    confirmPassword.setCustomValidity(matches ? '' : 'Passwords do not match.');
+    passwordMatchMessage.textContent = matches ? 'Passwords match.' : 'Passwords do not match.';
+    passwordMatchMessage.className = matches
+      ? 'form-text text-success'
+      : 'form-text text-danger';
+  }
+
+  password.addEventListener('input', updatePasswordMatch);
+  confirmPassword.addEventListener('input', updatePasswordMatch);
 </script>
 {% endblock %}

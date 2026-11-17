@@ -10,6 +10,7 @@ import math
 import random
 import re
 import string
+import time
 from datetime import timedelta
 from decimal import Decimal
 
@@ -27,8 +28,13 @@ from flask import (
 from flask_login import current_user, login_required
 
 from app.extensions import csrf, db
-from app.email import EmailDeliveryError, send_reservation_confirmation
+from app.email import (
+    EmailDeliveryError,
+    send_premium_subscription_confirmation,
+    send_reservation_confirmation,
+)
 from app.models import Notification, Payment, Property, utcnow
+from app.models import PremiumSubscription
 from app.payments import mpesa
 
 payments_bp = Blueprint("payments", __name__, url_prefix="/payments")
@@ -37,6 +43,15 @@ payments_bp = Blueprint("payments", __name__, url_prefix="/payments")
 DEMO_CONFIRM_SECONDS = 4
 # a prompt the phone never answered is closed after this long
 PENDING_EXPIRES = timedelta(minutes=3)
+# wait this long after the prompt is sent before asking Safaricom for a result
+FIRST_QUERY_AFTER = timedelta(seconds=10)
+# ask Safaricom about one payment at most this often (the status page polls
+# every few seconds, and too many queries get the computer blocked)
+QUERY_EVERY_SECONDS = 6
+# a real payment marked failed is checked with Safaricom again for this long,
+# so a PIN entered after the page gave up is still recorded as paid
+RECHECK_FAILED_FOR = timedelta(hours=24)
+_last_query = {}
 # M-Pesa's largest single STK push payment
 MAX_CUSTOM_AMOUNT = 250_000
 MAX_EXTRA_EMAILS = 5
@@ -50,7 +65,40 @@ def reservation_amount(listing):
 
 
 def can_reserve(listing):
-    return bool(listing.is_active) and listing.availability_status in ("vacant", "unknown")
+    """Only a unit confirmed vacant can be reserved.
+
+    A unit whose status is unknown may already be let, so taking a deposit for
+    it is refused; the renter can ask for a premium vacancy check first.
+    """
+    return bool(listing.is_active) and listing.availability_status == "vacant"
+
+
+def not_reservable_message(listing):
+    """Why a unit cannot be reserved, in words for the renter."""
+    status = listing.availability_status
+    if not listing.is_active:
+        return "This listing is no longer active, so it can't be reserved."
+    if status == "reserved":
+        return "This unit has already been reserved by another renter."
+    if status == "occupied":
+        return "This unit is occupied, so it can't be reserved."
+    return (
+        "This unit can only be reserved once it is confirmed vacant. "
+        "Request a vacancy check to have it confirmed."
+    )
+
+
+def has_pending_reservation(listing_id):
+    pending = Payment.query.filter_by(listing_id=listing_id, status="pending").all()
+    now = utcnow()
+    active = False
+    for payment in pending:
+        if now - (payment.created_at or now) >= PENDING_EXPIRES:
+            payment.status = "failed"
+            payment.result_desc = mpesa.RESULT_MESSAGES[1037]
+        else:
+            active = True
+    return active
 
 
 def _renter_required():
@@ -80,10 +128,30 @@ def pay(listing_id):
     demo = mpesa.is_demo(config)
 
     if not can_reserve(listing):
-        flash("This unit is no longer open for reservation.", "warning")
+        flash(not_reservable_message(listing), "warning")
         return redirect(url_for("listings.detail", listing_id=listing_id))
 
     if request.method == "POST":
+        # Serialize payment creation for this unit. The pending payment is
+        # committed before contacting Safaricom so it acts as a reservation
+        # hold for concurrent requests.
+        listing = (
+            Property.query.filter_by(listing_id=listing_id)
+            .with_for_update()
+            .first()
+        )
+        if listing is None:
+            abort(404)
+        # checked again under the row lock: the status may have changed since
+        # the form was opened
+        if not can_reserve(listing):
+            flash(not_reservable_message(listing), "warning")
+            return redirect(url_for("listings.detail", listing_id=listing_id))
+        if has_pending_reservation(listing_id):
+            flash("This unit already has a reservation in progress.", "warning")
+            return redirect(url_for("listings.detail", listing_id=listing_id))
+        amount = reservation_amount(listing)
+
         form = request.form
         choice = "custom" if form.get("amount_choice") == "custom" else "reservation"
 
@@ -99,7 +167,7 @@ def pay(listing_id):
 
         phone = mpesa.normalise_phone(form.get("phone"))
         if not phone:
-            return refuse("Enter a valid Safaricom number, for example 0712 345 678.")
+            return refuse("Enter a valid Safaricom number, for example 0712 345 678 or 0112 345 678.")
 
         to_pay = amount
         if choice == "custom":
@@ -132,6 +200,7 @@ def pay(listing_id):
         )
         db.session.add(payment)
         db.session.flush()
+        db.session.commit()
 
         try:
             if demo:
@@ -162,7 +231,7 @@ def pay(listing_id):
         listing=listing,
         amount=amount,
         demo=demo,
-        phone=current_user.phonenumber or "",
+        phone=mpesa.local_part(current_user.phonenumber),
         choice="reservation",
         custom_amount="",
         receipt_email="",
@@ -189,8 +258,13 @@ def _email_proof(payment):
 
 
 def _finish(payment, code, description, receipt=None):
-    """Record the outcome of a payment. Safe to call twice."""
-    if payment.status != "pending":
+    """Record the outcome of a payment. Safe to call twice.
+
+    A success reported by Safaricom always wins over an earlier "failed":
+    the money has left the renter's M-Pesa, so the payment must show as paid.
+    """
+    late_success = payment.status == "failed" and code == 0
+    if payment.status != "pending" and not late_success:
         return
     payment.result_desc = (description or mpesa.RESULT_MESSAGES.get(code, ""))[:255]
     if code == 0:
@@ -204,14 +278,50 @@ def _finish(payment, code, description, receipt=None):
             Notification(
                 renter_id=payment.renter_id,
                 listing_id=payment.listing_id,
-                message=f"Payment of KSh {float(payment.amount):,.0f} received. "
-                        f"{listing.title if listing else 'Your unit'} is reserved for you.",
+                message=(
+                    f"Payment of KShs {float(payment.amount):,.0f} received, "
+                    "you now have access to premium subscription."
+                    if payment.purpose in ("premium_subscription", "premium_subscription_demo")
+                    else f"Payment of KSh {float(payment.amount):,.0f} received. "
+                    f"{listing.title if listing else 'Your unit'} is reserved for you."
+                ),
                 type="payment",
                 url=url_for("payments.status", payment_id=payment.payment_id),
             )
         )
         db.session.commit()
-        _email_proof(payment)
+        if payment.listing_id is not None:
+            _email_proof(payment)
+        if payment.purpose in ("premium_subscription", "premium_subscription_demo"):
+            now = utcnow()
+            current = (
+                PremiumSubscription.query
+                .filter_by(renter_id=payment.renter_id, status="active")
+                .order_by(PremiumSubscription.expires_at.desc())
+                .first()
+            )
+            start = current.expires_at if current and current.expires_at > now else now
+            db.session.add(
+                PremiumSubscription(
+                    renter_id=payment.renter_id,
+                    payment_id=payment.payment_id,
+                    starts_at=start,
+                    expires_at=start + timedelta(days=current_app.config["PREMIUM_SUBSCRIPTION_DAYS"]),
+                )
+            )
+            db.session.commit()
+            try:
+                send_premium_subscription_confirmation(
+                    payment.renter.user,
+                    payment,
+                    start + timedelta(days=current_app.config["PREMIUM_SUBSCRIPTION_DAYS"]),
+                )
+            except EmailDeliveryError as exc:
+                current_app.logger.warning(
+                    "Premium subscription email was not sent for payment %s: %s",
+                    payment.payment_id,
+                    exc,
+                )
     elif code in (1032,):
         payment.status = "cancelled"
     else:
@@ -219,11 +329,41 @@ def _finish(payment, code, description, receipt=None):
     db.session.commit()
 
 
-def _reconcile(payment):
-    """Bring a pending payment up to date. Called whenever the status is read."""
+def _query_safaricom(payment):
+    """Safaricom's result for a real payment, or None if not known yet.
+
+    Throttled per payment so polling the status page does not flood Daraja.
+    """
+    if not payment.checkout_request_id:
+        return None
+    now = time.monotonic()
+    if now - _last_query.get(payment.payment_id, 0) < QUERY_EVERY_SECONDS:
+        return None
+    _last_query[payment.payment_id] = now
+    try:
+        return mpesa.stk_query(current_app.config, payment.checkout_request_id)
+    except mpesa.MpesaError as exc:
+        current_app.logger.info("STK query for payment %s failed: %s", payment.payment_id, exc)
+        return None
+
+
+def _reconcile(payment, recheck_failed=False):
+    """Bring a pending payment up to date. Called whenever the status is read.
+
+    With recheck_failed, a real payment that was marked failed in the last
+    RECHECK_FAILED_FOR is asked about again, and turned into "paid" if
+    Safaricom says the renter did approve it.
+    """
+    age = utcnow() - (payment.created_at or utcnow())
+
+    if payment.status == "failed":
+        if recheck_failed and not payment.simulated and age < RECHECK_FAILED_FOR:
+            outcome = _query_safaricom(payment)
+            if outcome is not None and outcome["code"] == 0:
+                _finish(payment, 0, outcome["description"])
+        return
     if payment.status != "pending":
         return
-    age = utcnow() - (payment.created_at or utcnow())
 
     if payment.simulated:
         if age >= timedelta(seconds=DEMO_CONFIRM_SECONDS):
@@ -231,12 +371,10 @@ def _reconcile(payment):
             _finish(payment, 0, "Demo payment confirmed (no real money moved).", receipt)
         return
 
-    # real payment: the callback normally arrives first. If it has not, ask Safaricom.
-    if age >= timedelta(seconds=8) and payment.checkout_request_id:
-        try:
-            outcome = mpesa.stk_query(current_app.config, payment.checkout_request_id)
-        except mpesa.MpesaError:
-            outcome = None
+    # real payment: the callback normally arrives first. If it has not, ask
+    # Safaricom; "still processing" comes back as None and we keep waiting.
+    if age >= FIRST_QUERY_AFTER:
+        outcome = _query_safaricom(payment)
         if outcome is not None:
             _finish(payment, outcome["code"], outcome["description"])
             return
@@ -250,7 +388,7 @@ def status(payment_id):
     payment = db.get_or_404(Payment, payment_id)
     if not _visible_to_current_user(payment):
         abort(403)
-    _reconcile(payment)
+    _reconcile(payment, recheck_failed=True)
     listing = payment.listing
     return render_template(
         "payments/status.html", payment=payment, listing=listing,
@@ -351,7 +489,10 @@ def mpesa_callback(token):
         return jsonify(accepted)
 
     payment = Payment.query.filter_by(checkout_request_id=result["checkout_request_id"]).first()
-    if payment is None or payment.status != "pending":
+    accepts_late_success = (
+        payment is not None and payment.status == "failed" and result["code"] == 0
+    )
+    if payment is None or (payment.status != "pending" and not accepts_late_success):
         return jsonify(accepted)
 
     if result["code"] == 0:

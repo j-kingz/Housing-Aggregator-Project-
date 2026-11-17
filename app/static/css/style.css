@@ -94,6 +94,16 @@ h1, h2, h3, h4, h5 {
   font-size: 0.9rem;
 }
 
+.required-star {
+  color: #dc3545;
+  font-weight: 700;
+  margin-left: 0.15rem;
+}
+
+.password-requirement-valid {
+  color: #198754;
+}
+
 .input-group-text {
   border-radius: 10px;
   background: var(--brand-light);
@@ -168,6 +178,13 @@ h1, h2, h3, h4, h5 {
   opacity: 0.9;
   max-width: 560px;
 }
+
+/* the county box on the search form fills itself from the place; it is not typed in */
+.county-auto[readonly] {
+  background-color: #f6f7f9;
+  cursor: default;
+}
+.county-auto[readonly]:focus { box-shadow: none; border-color: var(--bs-border-color, #dee2e6); }
 
 .search-box {
   background: #fff;

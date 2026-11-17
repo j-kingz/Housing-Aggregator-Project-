@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import requests
 
 from scraper import robots_checker
+from scraper.url_safety import UnsafeUrlError, validate_request_url
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,10 @@ class Fetcher:
     # -- public api ----------------------------------------------------
     def get(self, url):
         """Download a page and return its HTML. Raises FetchError on failure."""
+        try:
+            validate_request_url(url)
+        except UnsafeUrlError as exc:
+            raise FetchError(str(exc)) from exc
         if not self._host_allowed(url):
             raise FetchError(f"robots.txt does not allow reading {url}")
 
@@ -96,16 +101,23 @@ class Fetcher:
         for attempt in range(self.max_retries + 1):
             self._sleep_if_needed()
             try:
-                response = self.session.get(url, timeout=self.timeout)
+                response = self.session.get(
+                    url, timeout=self.timeout, allow_redirects=False
+                )
                 self._last_request_at = time.monotonic()
 
+                if 300 <= response.status_code < 400:
+                    raise FetchError(f"{url} returned a redirect, which is not allowed")
                 if response.status_code in (403, 429):
                     raise FetchError(
                         f"{url} returned {response.status_code}. "
                         "The site is rate limiting or blocking the request."
                     )
                 if response.status_code >= 500:
-                    raise FetchError(f"{url} returned {response.status_code}")
+                    # a server error is often temporary, so this one is retried
+                    raise requests.HTTPError(
+                        f"{url} returned {response.status_code}", response=response
+                    )
 
                 response.raise_for_status()
                 # modern sites send UTF-8; guessing the encoding turns "m²" into junk
@@ -117,7 +129,8 @@ class Fetcher:
             except requests.RequestException as exc:
                 last_error = exc
                 log.warning("Attempt %s for %s failed: %s", attempt + 1, url, exc)
-                time.sleep(min(2 ** attempt, 10))
+                if attempt < self.max_retries:
+                    time.sleep(min(2 ** attempt, 10))
 
         raise FetchError(f"Could not download {url}: {last_error}")
 

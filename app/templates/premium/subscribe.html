@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Premium vacancy verification{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width:560px">
+  <div class="panel p-4">
+    <h3>Premium vacancy verification</h3>
+    <p class="text-muted">Pay with M-Pesa for 30 days of access to verified vacancy checks. A checker reports back within 24 hours.</p>
+    {% if demo %}
+      <div class="alert alert-warning small">Demo mode: M-Pesa keys are not set up, so no money moves and the payment confirms by itself.</div>
+    {% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label class="form-label">Amount</label>
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="amount_choice" id="choiceStandard" value="standard"
+               {% if choice != 'custom' %}checked{% endif %}>
+        <label class="form-check-label" for="choiceStandard">Standard price: KSh {{ "{:,.0f}".format(amount) }}</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="radio" name="amount_choice" id="choiceCustom" value="custom"
+               {% if choice == 'custom' %}checked{% endif %}>
+        <label class="form-check-label" for="choiceCustom">An amount of my choice</label>
+      </div>
+      <div class="input-group mb-3" id="customBox" {% if choice != 'custom' %}hidden{% endif %}>
+        <span class="input-group-text">KSh</span>
+        <input type="number" id="custom_amount" name="custom_amount" class="form-control" min="1" max="{{ max_custom }}"
+               step="1" inputmode="numeric" placeholder="e.g. 200" value="{{ custom_amount }}">
+      </div>
+
+      <label class="form-label" for="phone">M-Pesa phone number</label>
+      <div class="input-group mb-1">
+        <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+        <span class="input-group-text">+254</span>
+        <input type="tel" id="phone" name="phone" class="form-control"
+               placeholder="712 345 678" value="{{ phone }}" required
+               pattern="0?[17][0-9]{8}" maxlength="10" inputmode="numeric" autocomplete="tel"
+               title="The 9 digits after +254, for example 712345678">
+      </div>
+      <div class="form-text mb-3">Enter the 9 digits after +254. A prompt appears on this phone; enter your M-Pesa PIN to approve.</div>
+      <button class="btn btn-success w-100" id="payBtn">Pay KSh {{ "{:,.0f}".format(amount) }} with M-Pesa</button>
+    </form>
+  </div>
+</div>
+<script>
+  (function () {
+    const standard = {{ amount|int }};
+    const box = document.getElementById('customBox');
+    const input = document.getElementById('custom_amount');
+    const btn = document.getElementById('payBtn');
+    const update = () => {
+      const custom = document.getElementById('choiceCustom').checked;
+      box.hidden = !custom;
+      input.required = custom;
+      const value = custom ? parseInt(input.value, 10) : standard;
+      btn.textContent = value > 0
+        ? 'Pay KSh ' + value.toLocaleString('en-KE') + ' with M-Pesa'
+        : 'Pay with M-Pesa';
+    };
+    document.querySelectorAll('input[name="amount_choice"]').forEach(r => r.addEventListener('change', update));
+    input.addEventListener('input', update);
+    update();
+  })();
+</script>
+{% endblock %}

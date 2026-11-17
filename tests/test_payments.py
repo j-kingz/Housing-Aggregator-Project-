@@ -21,6 +21,16 @@ class TestPhoneNumbers:
         assert mpesa.normalise_phone("0612345678") is None
         assert mpesa.normalise_phone("") is None
 
+    def test_payment_form_accepts_011_numbers(self, client):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A")
+        response = client.get(f"/payments/pay/{unit.listing_id}")
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'pattern="0?[17][0-9]{8}"' in html
+        assert "+254" in html
+
 
 def start_payment(client, unit, phone="0712345678"):
     return client.post(f"/payments/pay/{unit.listing_id}", data={"phone": phone})
@@ -95,8 +105,27 @@ class TestDemoPayment:
         login(client, "r@example.com")
         unit = add_unit(room_number="1A", availability_status="reserved")
         response = client.get(f"/payments/pay/{unit.listing_id}", follow_redirects=True)
-        assert "no longer open" in response.get_data(as_text=True)
+        assert "already been reserved by another renter" in response.get_data(as_text=True)
         assert Payment.query.count() == 0
+
+    def test_a_pending_payment_holds_the_unit_for_other_renters(self, client, app, areas):
+        make_user("r@example.com", "Renter")
+        make_user("other@example.com", "Renter")
+        unit = add_unit(room_number="1A")
+
+        login(client, "r@example.com")
+        start_payment(client, unit)
+        client.post("/logout")
+
+        login(client, "other@example.com")
+        response = client.post(
+            f"/payments/pay/{unit.listing_id}",
+            data={"phone": "0712345678"},
+            follow_redirects=True,
+        )
+
+        assert "reservation in progress" in response.get_data(as_text=True)
+        assert Payment.query.count() == 1
 
     def test_landlords_cannot_pay(self, client, app, areas):
         make_user("l@example.com", "Landlord")
@@ -190,6 +219,18 @@ class TestCallback:
         client.post(self.url(app), json=self.body(code=1032))
         db.session.refresh(payment)
         assert payment.status == "paid"
+
+    def test_a_late_success_callback_recovers_a_timeout(self, client, app, areas):
+        payment, unit = self.make_pending(client, app)
+        payment.status = "failed"
+        payment.result_desc = mpesa.RESULT_MESSAGES[1037]
+        db.session.commit()
+
+        client.post(self.url(app), json=self.body())
+        db.session.refresh(payment)
+        assert payment.status == "paid"
+        assert payment.mpesa_receipt == "QGH7XYZ123"
+        assert db.session.get(Property, unit.listing_id).availability_status == "reserved"
 
     def test_garbage_is_accepted_quietly(self, client, app, areas):
         response = client.post(self.url(app), json={"hello": "world"})
@@ -337,3 +378,110 @@ class TestDarajaSettings:
         assert body["PartyB"] == body["BusinessShortCode"] == "174379"
         assert body["Amount"] == 1
         assert body["CallBackURL"].startswith("https://")
+
+
+# -- only a unit confirmed vacant can be reserved ------------------------------
+class TestOnlyConfirmedVacantUnits:
+    def _renter(self, client):
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+
+    def test_an_unconfirmed_unit_cannot_be_paid_for(self, client, app, areas):
+        self._renter(client)
+        unit = add_unit(room_number="1A", availability_status="unknown")
+
+        response = client.get(f"/payments/pay/{unit.listing_id}", follow_redirects=True)
+        assert "only be reserved once it is confirmed vacant" in response.get_data(as_text=True)
+
+        client.post(f"/payments/pay/{unit.listing_id}", data={"phone": "0712345678"})
+        assert Payment.query.count() == 0
+
+    def test_an_occupied_unit_cannot_be_paid_for(self, client, app, areas):
+        self._renter(client)
+        unit = add_unit(room_number="1A", availability_status="occupied")
+        response = client.post(f"/payments/pay/{unit.listing_id}", data={"phone": "0712345678"},
+                               follow_redirects=True)
+        assert "occupied" in response.get_data(as_text=True)
+        assert Payment.query.count() == 0
+
+    def test_a_confirmed_vacant_unit_can_be_paid_for(self, client, app, areas):
+        self._renter(client)
+        unit = add_unit(room_number="1A", availability_status="vacant")
+        client.post(f"/payments/pay/{unit.listing_id}", data={"phone": "0712345678"})
+        assert Payment.query.count() == 1
+
+    def test_the_listing_page_locks_the_button_until_confirmed(self, client, app, areas):
+        self._renter(client)
+        unit = add_unit(room_number="1A", availability_status="unknown")
+        page = client.get(f"/listings/{unit.listing_id}").get_data(as_text=True)
+        assert f"/payments/pay/{unit.listing_id}" not in page
+        assert "Reservation opens once this unit is confirmed vacant" in page
+
+        unit.availability_status = "vacant"
+        db.session.commit()
+        page = client.get(f"/listings/{unit.listing_id}").get_data(as_text=True)
+        assert f"/payments/pay/{unit.listing_id}" in page
+        assert "Reservation opens once" not in page
+
+
+class TestStillProcessing:
+    """Safaricom's "still processing" reply must not fail a payment before the PIN."""
+
+    def _query_reply(self, monkeypatch, reply):
+        monkeypatch.setattr(mpesa, "_post", lambda config, path, payload: reply)
+        return mpesa.stk_query({"MPESA_CONSUMER_KEY": "k"}, "ws_CO_1")
+
+    def test_4999_means_keep_waiting(self, monkeypatch):
+        reply = {"ResultCode": "4999", "ResultDesc": "The transaction is still under processing"}
+        assert self._query_reply(monkeypatch, reply) is None
+
+    def test_being_processed_error_means_keep_waiting(self, monkeypatch):
+        reply = {"errorCode": "500.001.1001", "errorMessage": "The transaction is being processed"}
+        assert self._query_reply(monkeypatch, reply) is None
+
+    def test_a_real_result_is_returned(self, monkeypatch):
+        reply = {"ResultCode": "0", "ResultDesc": "The service request is processed successfully."}
+        assert self._query_reply(monkeypatch, reply)["code"] == 0
+
+    def _real_pending(self, client, age_seconds):
+        from app.payments import routes
+        routes._last_query.clear()
+        make_user("r@example.com", "Renter")
+        login(client, "r@example.com")
+        unit = add_unit(room_number="1A", rentamount=50000)
+        payment = Payment(
+            renter_id=db.session.execute(db.text("select min(renter_id) from renter_details")).scalar(),
+            listing_id=unit.listing_id, amount=5000, status="pending", phone="254712345678",
+            checkout_request_id="ws_CO_9", simulated=False,
+            created_at=utcnow() - timedelta(seconds=age_seconds),
+        )
+        db.session.add(payment)
+        db.session.commit()
+        return payment
+
+    def test_the_status_page_keeps_waiting_while_the_pin_prompt_is_open(self, client, app, areas, monkeypatch):
+        monkeypatch.setattr(mpesa, "_post", lambda c, p, d: {"ResultCode": "4999", "ResultDesc": "still"})
+        payment = self._real_pending(client, 20)
+        data = client.get(f"/payments/{payment.payment_id}/status.json").get_json()
+        assert data["status"] == "pending"
+
+    def test_a_payment_marked_failed_turns_paid_when_safaricom_says_so(self, client, app, areas, monkeypatch):
+        payment = self._real_pending(client, 300)
+        payment.status = "failed"
+        payment.result_desc = "Something went wrong"
+        db.session.commit()
+        monkeypatch.setattr(mpesa, "_post", lambda c, p, d: {"ResultCode": "0", "ResultDesc": "ok"})
+        client.get(f"/payments/{payment.payment_id}")
+        db.session.refresh(payment)
+        assert payment.status == "paid"
+
+    def test_any_failed_payment_accepts_a_success_callback(self, client, app, areas):
+        payment = self._real_pending(client, 300)
+        payment.checkout_request_id = "ws_CO_123"
+        payment.status = "failed"
+        payment.result_desc = "The transaction is still under processing"
+        db.session.commit()
+        client.post(f"/payments/mpesa/callback/{mpesa.callback_token(app.config)}",
+                    json=TestCallback().body())
+        db.session.refresh(payment)
+        assert payment.status == "paid"

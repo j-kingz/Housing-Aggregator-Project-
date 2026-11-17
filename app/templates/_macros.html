@@ -17,15 +17,15 @@
 {% macro verdict_badge(verdict) -%}
   {%- if verdict and verdict.verdict in ('cheap', 'fair', 'expensive') -%}
     {%- if verdict.verdict == 'cheap' -%}
-      <span class="badge verdict-verdict verdict-cheap" title="{{ '%.0f' % verdict.difference_percent }}% below the area average">
-        <i class="bi bi-arrow-down-circle"></i> {{ verdict.difference_percent | round(0) | int }}% below market
+      <span class="badge verdict-verdict verdict-cheap" title="{{ '%.0f' % (verdict.difference_percent | abs) }}% below the usual rent for similar homes nearby">
+        <i class="bi bi-arrow-down-circle"></i> {{ verdict.difference_percent | abs | round(0) | int }}% below market
       </span>
     {%- elif verdict.verdict == 'expensive' -%}
-      <span class="badge verdict-verdict verdict-expensive" title="{{ '%.0f' % verdict.difference_percent }}% above the area average">
+      <span class="badge verdict-verdict verdict-expensive" title="{{ '%.0f' % verdict.difference_percent }}% above the usual rent for similar homes nearby">
         <i class="bi bi-arrow-up-circle"></i> {{ verdict.difference_percent | round(0) | int }}% above market
       </span>
     {%- else -%}
-      <span class="badge verdict-verdict verdict-fair" title="Close to the area average">
+      <span class="badge verdict-verdict verdict-fair" title="Close to the usual rent for similar homes nearby">
         <i class="bi bi-check-circle"></i> Fair price
       </span>
     {%- endif -%}
@@ -100,12 +100,7 @@
 {% macro confirm_help(listing, as_link=true) -%}
 {%- if not as_link -%}
 <span class="confirm-help"><i class="bi bi-info-circle me-1"></i>Not confirmed. Open this home to see the agent and check it is free.</span>
-{%- elif listing.source_url and listing.source_url.startswith(('http://', 'https://')) -%}
-<a class="confirm-help" href="{{ listing.source_url }}" target="_blank" rel="noopener noreferrer"
-   onclick="event.stopPropagation()">
-  <i class="bi bi-box-arrow-up-right me-1"></i>Open the original advert to see the agent and confirm it is free
-</a>
 {%- else -%}
-<span class="confirm-help">Ask the landlord to confirm this unit is free</span>
+<span class="confirm-help">Use premium vacancy verification to have an approved checker confirm this unit is free</span>
 {%- endif -%}
 {%- endmacro %}
