@@ -86,6 +86,41 @@
         </ul>
 
         <div class="nav-actions d-flex align-items-center gap-2 my-2 my-lg-0">
+          <div class="dropdown accessibility-menu">
+  <button class="btn btn-outline-primary btn-sm accessibility-toggle" type="button"
+          id="accessibilityMenuButton" data-bs-toggle="dropdown" aria-expanded="false"
+          aria-label="Open accessibility settings" title="Accessibility settings">
+    <i class="bi bi-universal-access" aria-hidden="true"></i>
+    <span class="d-lg-none ms-1">Accessibility</span>
+  </button>
+
+  <div class="dropdown-menu dropdown-menu-end p-3 shadow accessibility-panel"
+       aria-labelledby="accessibilityMenuButton">
+    <p class="fw-semibold mb-2">
+      <i class="bi bi-universal-access me-1" aria-hidden="true"></i>Accessibility
+    </p>
+
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+      <span id="fontSizeLabel">Text size</span>
+      <div class="btn-group" role="group" aria-labelledby="fontSizeLabel">
+        <button type="button" class="btn btn-outline-secondary btn-sm"
+                data-font-size="decrease" aria-label="Decrease text size">A−</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm"
+                data-font-size="reset" aria-label="Reset text size">A</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm"
+                data-font-size="increase" aria-label="Increase text size">A+</button>
+      </div>
+    </div>
+
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" role="switch"
+             id="highContrastToggle">
+      <label class="form-check-label" for="highContrastToggle">High contrast</label>
+    </div>
+
+    <p class="small text-muted mb-0 mt-2">Your choices are saved on this device.</p>
+  </div>
+</div>
           {% if current_user.is_authenticated and current_user.is_renter %}
             <a class="nav-bell" href="{{ url_for('notifications.inbox') }}" title="Notifications">
               <i class="bi bi-bell"></i>
@@ -173,6 +208,7 @@
   <script src="{{ url_for('static', filename='js/typeahead.js') }}"></script>
   <script src="{{ url_for('static', filename='js/map.js') }}"></script>
   <script src="{{ url_for('static', filename='js/favorites.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/accessibility.js') }}"></script>
   {% include "_maps.html" %}
 </body>
 </html>

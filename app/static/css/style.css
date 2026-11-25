@@ -399,6 +399,9 @@ h1, h2, h3, h4, h5 {
 .verdict-verdict {
   font-size: 0.75rem;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .verdict-cheap {
@@ -796,4 +799,81 @@ a.confirm-help:hover { background: #fef3c7; color: #78350f; }
     padding-top: 0.75rem;
     width: 100%;
   }
+
 }
+
+  /* Accessibility controls and user-selected display preferences. */
+.accessibility-toggle {
+  min-width: 2.25rem;
+}
+
+.accessibility-panel {
+  width: min(19rem, calc(100vw - 2rem));
+}
+
+html[data-font-scale="large"] {
+  font-size: 112.5%;
+}
+
+html[data-font-scale="larger"] {
+  font-size: 125%;
+}
+
+body.high-contrast {
+  --ink: #000;
+  --muted: #1f1f1f;
+  --bg: #fff;
+  --surface: #fff;
+  --primary: #00008b;
+  --accent: #7a0000;
+  background: #fff;
+  color: #000;
+}
+
+body.high-contrast .site-nav,
+body.high-contrast .site-footer,
+body.high-contrast .panel,
+body.high-contrast .card,
+body.high-contrast .dropdown-menu {
+  background: #fff !important;
+  color: #000 !important;
+  border: 2px solid #000 !important;
+}
+
+body.high-contrast a,
+body.high-contrast .nav-link,
+body.high-contrast .text-muted {
+  color: #00008b !important;
+}
+
+body.high-contrast .btn,
+body.high-contrast .form-control,
+body.high-contrast .form-select {
+  border: 2px solid #000 !important;
+}
+
+body.high-contrast .btn-primary,
+body.high-contrast .btn-success {
+  background: #00008b !important;
+  color: #fff !important;
+}
+
+/* Price meaning remains visible through wording and symbols, not colour. */
+body.high-contrast .verdict-cheap,
+body.high-contrast .verdict-fair,
+body.high-contrast .verdict-expensive {
+  background: #fff !important;
+  color: #000 !important;
+  border: 2px solid #000 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+

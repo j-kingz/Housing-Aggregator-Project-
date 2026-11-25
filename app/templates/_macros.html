@@ -17,16 +17,25 @@
 {% macro verdict_badge(verdict) -%}
   {%- if verdict and verdict.verdict in ('cheap', 'fair', 'expensive') -%}
     {%- if verdict.verdict == 'cheap' -%}
-      <span class="badge verdict-verdict verdict-cheap" title="{{ '%.0f' % (verdict.difference_percent | abs) }}% below the usual rent for similar homes nearby">
-        <i class="bi bi-arrow-down-circle"></i> {{ verdict.difference_percent | abs | round(0) | int }}% below market
+      <span class="badge verdict-verdict verdict-cheap"
+            title="{{ '%.0f' % (verdict.difference_percent | abs) }}% below the usual rent for similar homes nearby"
+            aria-label="Price assessment: {{ verdict.difference_percent | abs | round(0) | int }} percent below market">
+        <i class="bi bi-arrow-down-circle" aria-hidden="true"></i>
+        {{ verdict.difference_percent | abs | round(0) | int }}% below market
       </span>
     {%- elif verdict.verdict == 'expensive' -%}
-      <span class="badge verdict-verdict verdict-expensive" title="{{ '%.0f' % verdict.difference_percent }}% above the usual rent for similar homes nearby">
-        <i class="bi bi-arrow-up-circle"></i> {{ verdict.difference_percent | round(0) | int }}% above market
+      <span class="badge verdict-verdict verdict-expensive"
+            title="{{ '%.0f' % verdict.difference_percent }}% above the usual rent for similar homes nearby"
+            aria-label="Price assessment: {{ verdict.difference_percent | round(0) | int }} percent above market">
+        <i class="bi bi-arrow-up-circle" aria-hidden="true"></i>
+        {{ verdict.difference_percent | round(0) | int }}% above market
       </span>
     {%- else -%}
-      <span class="badge verdict-verdict verdict-fair" title="Close to the usual rent for similar homes nearby">
-        <i class="bi bi-check-circle"></i> Fair price
+      <span class="badge verdict-verdict verdict-fair"
+            title="Close to the usual rent for similar homes nearby"
+            aria-label="Price assessment: fair price">
+        <i class="bi bi-check-circle" aria-hidden="true"></i>
+        Fair price
       </span>
     {%- endif -%}
   {%- endif -%}
